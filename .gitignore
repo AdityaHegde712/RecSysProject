@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+
+# HPC wheel cache
+.wheels/
+
+# Data (too large for git)
+data/raw/
+data/processed/
+
+# Outputs
+results/
+logs/
+checkpoints/
+
+# Model weights
+*.pt
+*.pth
+
+# OS
+.DS_Store

@@ -1,0 +1,31 @@
+# Dataset configuration for HotelRec (LREC 2020, Antognini & Faltings)
+dataset:
+  name: HotelRec
+  source: https://github.com/Diego999/HotelRec
+  raw_dir: data/raw
+  processed_dir: data/processed
+
+kcore:
+  values: [5, 20]
+  default: 20          # start with 20-core (2.2M reviews, fits in RAM)
+
+split:
+  train: 0.8
+  val: 0.1
+  test: 0.1
+  seed: 42
+
+text:
+  lowercase: true
+  max_length: 512      # truncate reviews longer than this (tokens)
+  min_length: 1
+
+sub_ratings:
+  - Service
+  - Cleanliness
+  - Location
+  - Value
+  - Rooms
+  - Sleep Quality
+  - Check-In
+  - Business Service

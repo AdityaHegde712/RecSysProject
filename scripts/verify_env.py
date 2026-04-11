@@ -1,0 +1,155 @@
+# -*- coding: utf-8 -*-
+"""Verify that all dependencies are installed and working.
+
+Run this BEFORE submitting batch jobs to catch issues early:
+    python scripts/verify_env.py
+
+Checks every import used by the HotelRec codebase and reports
+all failures at once instead of one at a time.
+"""
+
+import os
+import sys
+import importlib
+
+# Ensure project root is on path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+PASS = 0
+FAIL = 0
+
+
+def check(name, import_path=None, version_attr='__version__'):
+    """Try importing a module and report success/failure."""
+    global PASS, FAIL
+    mod_name = import_path or name
+    try:
+        mod = importlib.import_module(mod_name)
+        ver = getattr(mod, version_attr, '?') if version_attr else '?'
+        print(f"  OK   {name:<30s} {ver}")
+        PASS += 1
+    except Exception as e:
+        print(f"  FAIL {name:<30s} {e}")
+        FAIL += 1
+
+
+def check_torch_cuda():
+    """Check PyTorch CUDA availability."""
+    global PASS, FAIL
+    try:
+        import torch
+        if torch.cuda.is_available():
+            gpu = torch.cuda.get_device_name(0)
+            props = torch.cuda.get_device_properties(0)
+            mem = getattr(props, 'total_memory', None) or getattr(props, 'total_mem', 0)
+            print(f"  OK   {'torch.cuda':<30s} GPU: {gpu} ({mem / 1e9:.1f} GB)")
+        else:
+            print(f"  WARN {'torch.cuda':<30s} No GPU (OK on login node, needed on GPU node)")
+        PASS += 1
+    except Exception as e:
+        print(f"  FAIL {'torch.cuda':<30s} {e}")
+        FAIL += 1
+
+
+def check_torch_forward():
+    """Check that a simple forward pass works."""
+    global PASS, FAIL
+    try:
+        import torch
+        x = torch.randn(4, 32)
+        linear = torch.nn.Linear(32, 1)
+        y = linear(x)
+        assert y.shape == (4, 1)
+        print(f"  OK   {'torch forward pass':<30s} Linear works")
+        PASS += 1
+    except Exception as e:
+        print(f"  FAIL {'torch forward pass':<30s} {e}")
+        FAIL += 1
+
+
+def check_src_imports():
+    """Check that all project module imports work."""
+    global PASS, FAIL
+    modules = [
+        'src',
+        'src.models',
+        'src.models.common',
+        'src.models.gmf',
+        'src.data.dataset',
+        'src.data.preprocess',
+        'src.data.split',
+        'src.metrics.ranking',
+        'src.utils.io',
+        'src.utils.seed',
+        'src.utils.metrics_logger',
+    ]
+    for mod_name in modules:
+        try:
+            importlib.import_module(mod_name)
+            print(f"  OK   {mod_name:<30s}")
+            PASS += 1
+        except Exception as e:
+            print(f"  FAIL {mod_name:<30s} {e}")
+            FAIL += 1
+
+
+def check_script_syntax():
+    """Check that training/eval scripts can be parsed."""
+    global PASS, FAIL
+    import py_compile
+    scripts = [
+        'src/train.py',
+        'src/evaluate.py',
+    ]
+    for script in scripts:
+        try:
+            py_compile.compile(script, doraise=True)
+            print(f"  OK   {script:<30s} syntax ok")
+            PASS += 1
+        except Exception as e:
+            print(f"  FAIL {script:<30s} {e}")
+            FAIL += 1
+
+
+if __name__ == '__main__':
+    print("=" * 60)
+    print("HotelRec — Environment Verification")
+    print("=" * 60)
+    print(f"\nPython: {sys.version}")
+    print(f"Path:   {sys.executable}\n")
+
+    print("--- Core dependencies ---")
+    check('torch')
+    check('numpy')
+    check('scipy')
+    check('pandas')
+    check('scikit-learn', import_path='sklearn', version_attr='__version__')
+    check('matplotlib')
+    check('pyyaml', import_path='yaml', version_attr='__version__')
+    check('tqdm')
+    check('Pillow', import_path='PIL', version_attr='__version__')
+
+    print("\n--- PyTorch backend ---")
+    check_torch_cuda()
+    check_torch_forward()
+
+    print("\n--- Project imports ---")
+    check_src_imports()
+
+    print("\n--- Script syntax ---")
+    check_script_syntax()
+
+    print("\n" + "=" * 60)
+    print(f"Results: {PASS} passed, {FAIL} failed")
+    if FAIL > 0:
+        print("\nFix the failures above before submitting batch jobs.")
+        print("Common fixes:")
+        print("  pip install <package>")
+        print("  pip install --only-binary=:all: <package>")
+        sys.exit(1)
+    else:
+        print("\nAll checks passed! Ready to submit:")
+        print("  sbatch scripts/run_hpc.sh")
+    print("=" * 60)
