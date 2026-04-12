@@ -153,6 +153,12 @@ These are the GMF numbers reported in Antognini & Faltings (2020), Table 5.
 
 ---
 
+## Tools
+
+- **Claude** (Anthropic) — used for scaffolding the project structure, generating boilerplate code, and troubleshooting HPC pipeline issues
+
+---
+
 ## References
 
 - Antognini, D. & Faltings, B. (2020). *HotelRec: a Novel Very Large-Scale Hotel Recommendation Dataset*. In Proceedings of the 12th Language Resources and Evaluation Conference (LREC 2020), pages 4917–4924. [[Paper]](https://aclanthology.org/2020.lrec-1.605/) [[Dataset]](https://github.com/Diego999/HotelRec)
