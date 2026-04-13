@@ -43,10 +43,20 @@ set -o pipefail
 KCORE=20  # k-core filtering threshold
 
 # ─────────────────────────────────────────────────────────────────────
-# PROJECT DIR — resolve from script location, not cwd
+# PROJECT DIR
+# SLURM copies scripts to /var/spool, so BASH_SOURCE won't work.
+# Use SLURM_SUBMIT_DIR (set by sbatch to the dir where sbatch was called).
+# For direct execution (bash scripts/run_hpc.sh), fall back to pwd detection.
 # ─────────────────────────────────────────────────────────────────────
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
+    PROJECT_DIR="$SLURM_SUBMIT_DIR"
+elif [ -f "scripts/run_hpc.sh" ]; then
+    PROJECT_DIR="$(pwd)"
+elif [ -f "run_hpc.sh" ]; then
+    PROJECT_DIR="$(cd .. && pwd)"
+else
+    PROJECT_DIR="$(pwd)"
+fi
 cd "$PROJECT_DIR"
 
 mkdir -p logs results
