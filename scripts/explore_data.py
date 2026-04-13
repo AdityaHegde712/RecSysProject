@@ -43,57 +43,53 @@ SUB_RATING_DISPLAY = {
 }
 
 
-def parse_jsonl_file(fpath: str) -> list[dict]:
-    """Parse a single JSONL file (one JSON object per line)."""
-    records = []
-    with open(fpath, "r", encoding="utf-8", errors="replace") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                record = json.loads(line)
-                records.append(record)
-            except json.JSONDecodeError:
-                continue
-    return records
+def stream_file(fpath: str):
+    """
+    Stream reviews from a JSON file one at a time. Uses ijson for large files
+    (>100MB) to avoid loading 10GB into RAM. Falls back to json.load for
+    small files.
+    """
+    fsize = os.path.getsize(fpath)
 
-
-def parse_json_file(fpath: str) -> list[dict]:
-    """Parse a single JSON file (array of review objects)."""
-    with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+    if fsize > 100_000_000:  # > 100MB → stream with ijson
         try:
-            data = json.load(f)
-            if isinstance(data, list):
-                return data
-            else:
-                return [data]
-        except json.JSONDecodeError:
-            return []
+            import ijson
+            with open(fpath, "rb") as f:
+                for review in ijson.items(f, "item"):
+                    yield review
+            return
+        except ImportError:
+            print("  WARNING: ijson not installed. pip install ijson")
+            print("  Falling back to json.load — may OOM on large files.")
 
-
-def load_file(fpath: str) -> list[dict]:
-    """
-    Try JSONL first (one object per line), fall back to plain JSON array.
-    The HotelRec dataset can come in either format depending on how it was
-    downloaded / extracted.
-    """
-    # Peek at the first non-empty line to decide format
+    # Small file or no ijson — load directly
     with open(fpath, "r", encoding="utf-8", errors="replace") as f:
-        first_line = ""
+        first_char = ""
         for raw in f:
-            first_line = raw.strip()
-            if first_line:
+            first_char = raw.strip()[:1]
+            if first_char:
                 break
 
-    if not first_line:
-        return []
-
-    # If the file starts with '[', it's probably a JSON array
-    if first_line.startswith("["):
-        return parse_json_file(fpath)
+    if first_char == "[":
+        # JSON array
+        with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+            try:
+                data = json.load(f)
+                for item in (data if isinstance(data, list) else [data]):
+                    yield item
+            except json.JSONDecodeError:
+                return
     else:
-        return parse_jsonl_file(fpath)
+        # JSONL (one object per line)
+        with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError:
+                    continue
 
 
 # ── main logic ───────────────────────────────────────────────────────────────
@@ -109,9 +105,19 @@ def explore(data_dir: str, sample_size: int = 0):
     )
 
     if not all_files:
-        print(f"ERROR: No JSON/JSONL/TXT files found in {data_dir}")
-        print("Make sure you've downloaded and extracted the HotelRec dataset.")
-        sys.exit(1)
+        print(f"No data files found in {data_dir}")
+        print("Downloading sample dataset...")
+        import subprocess
+        script = Path(__file__).parent / "download_data.sh"
+        subprocess.run(["bash", str(script), "sample"], check=True)
+        # re-scan after download
+        all_files = sorted(
+            p for p in data_path.iterdir()
+            if p.is_file() and p.suffix.lower() in extensions
+        )
+        if not all_files:
+            print(f"ERROR: Still no data after download. Check scripts/download_data.sh")
+            sys.exit(1)
 
     total_files = len(all_files)
     if sample_size > 0:
@@ -141,10 +147,10 @@ def explore(data_dir: str, sample_size: int = 0):
         if (idx + 1) % 500 == 0 or idx == 0:
             print(f"  [{idx + 1}/{n_files}] Processing {fpath.name}...")
 
-        records = load_file(str(fpath))
-
-        for rec in records:
+        for rec in stream_file(str(fpath)):
             total_reviews += 1
+            if total_reviews % 1_000_000 == 0:
+                print(f"    {total_reviews:,} reviews processed...")
 
             # User / item identifiers
             user = rec.get("author") or rec.get("user_url") or rec.get("user_id", "")
