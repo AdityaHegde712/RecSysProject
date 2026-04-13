@@ -17,8 +17,9 @@ venv/
 data/raw/
 data/processed/
 
-# Outputs
-results/
+# Outputs (keep evaluation JSONs, ignore model checkpoints and logs)
+results/*
+!results/data_evaluation.json
 logs/
 checkpoints/
 

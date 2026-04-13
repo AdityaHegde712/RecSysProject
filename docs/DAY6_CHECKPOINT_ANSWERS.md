@@ -12,14 +12,26 @@
 
 ### 1a. Basic Statistics
 
+*Verified by running `hpa-explore` on the full 50M-review dataset. See [`results/data_evaluation.json`](../results/data_evaluation.json) for the complete structured output.*
+
 | Stat | Value |
 |------|-------|
-| Number of users | 21,891,294 (full) / 72,603 (20-core) |
-| Number of items | 365,056 (full) / 38,903 (20-core) |
+| Number of users | 21,891,404 (full) / 72,603 (20-core) |
+| Number of items | 365,057 (full) / 38,903 (20-core) |
 | Number of interactions | 50,264,531 (full) / 2,222,373 (20-core) |
 | Density | 0.00063% (full) / 0.079% (20-core) |
-| Avg interactions per user | 2.24 (full) / 30.6 (20-core) |
+| Sparsity | 99.99937% (full) / 99.921% (20-core) |
+| Avg reviews per user | 2.30 (full) / 30.6 (20-core) |
+| Median reviews per user | 1.0 (full) |
+| Avg reviews per item | 137.69 (full) |
+| Median reviews per item | 41.0 (full) |
+| Rating mean / median | 4.15 / 5.0 |
+| Rating std | 1.12 |
+| Reviews with text | 50,264,528 (essentially all) |
+| Mean review length | 127 words |
 | Available metadata | Overall rating (1–5), review text, date, up to 8 sub-ratings (Service, Cleanliness, Location, Value, Rooms, Sleep Quality, Check-In, Business Service), user profile URL, hotel URL |
+
+The paper reports 21,891,294 users and 365,056 items — our actual counts are 21,891,404 and 365,057 respectively. The small difference is likely from deduplication or minor data cleaning differences. 20-core numbers are from the paper since we haven't run k-core filtering yet.
 
 We plan to use the **20-core** subset for development and hyperparameter tuning since it fits comfortably in RAM (~2.2M reviews), and the **5-core** subset (21M reviews) for final evaluation to match the paper's reported numbers.
 
@@ -29,11 +41,13 @@ We plan to use the **20-core** subset for development and hyperparameter tuning 
 
 - **Severe cold start** — 67.55% of users wrote exactly one review, and 90.73% wrote fewer than five. This means the majority of users have almost no history to learn from, which is a fundamental problem for any user-embedding-based approach.
 
-- **Power-law distribution** — both user activity and item popularity follow a heavy long tail. The median reviews per user is 1 while the mean is 2.24; for hotels, the median is 41 vs. mean 137.69. A small number of popular hotels dominate the dataset.
+- **Power-law distribution** — both user activity and item popularity follow a heavy long tail. The median reviews per user is 1 while the mean is 2.30; for hotels, the median is 41 vs. mean 137.69. A small number of popular hotels dominate the dataset.
 
-- **Positive rating bias** — the average overall rating is 4.15/5 with a median of 5. Most reviews are positive, which makes rating prediction less discriminative and pushes us toward ranking-based evaluation rather than RMSE.
+- **Positive rating bias** — the average overall rating is 4.15/5 with a median of 5. Over half the reviews (26.1M) are 5-star. This makes rating prediction less discriminative and pushes us toward ranking-based evaluation rather than RMSE.
 
-- **Rich but optional metadata** — sub-ratings are available for a decent fraction of reviews, but coverage varies wildly. Service is present in 99.27% of reviews, but Business Service only in 1.69%. Any model that uses sub-ratings needs to handle missing values gracefully.
+- **Sub-rating coverage differs from paper** — the paper reports Service coverage at 99.27% and Business Service at 1.69%, but our scan of the full dataset shows Service at 70.77% and Check-In / Business Service at 0%. The paper's percentages were computed over reviews that have *any* sub-rating, while ours are over all 50M reviews. Check-In and Business Service fields appear to have been removed from TripAdvisor since the paper was published (or were renamed) — they have zero entries in the current dataset.
+
+- **Suspicious max-activity user** — one user account has 1,193,017 reviews, which is almost certainly a bot or aggregator account rather than a real person. This won't affect k-core filtered subsets much, but it's worth noting for any analysis on the full dataset.
 
 - **Scale** — 50M reviews is large enough that naive in-memory processing won't work. We need chunked I/O, parquet storage, and batched training. Even the 20-core subset at 2.2M rows requires some care with memory.
 

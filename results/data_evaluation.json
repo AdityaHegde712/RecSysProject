@@ -1,0 +1,92 @@
+{
+  "dataset": "HotelRec",
+  "source": "TripAdvisor via SWITCHdrive",
+  "archive": "HotelRec.zip (14.4 GB)",
+  "basic_stats": {
+    "total_reviews": 50264531,
+    "unique_users": 21891404,
+    "unique_items": 365057,
+    "density_pct": 0.00063,
+    "sparsity_pct": 99.99937,
+    "avg_reviews_per_user": 2.30,
+    "median_reviews_per_user": 1.0,
+    "avg_reviews_per_item": 137.69,
+    "median_reviews_per_item": 41.0
+  },
+  "rating_distribution": {
+    "mean": 4.15,
+    "median": 5.0,
+    "std": 1.12,
+    "min": 1.0,
+    "max": 5.0,
+    "histogram": {
+      "1": 2529778,
+      "2": 2543289,
+      "3": 5644102,
+      "4": 13437531,
+      "5": 26109831
+    }
+  },
+  "user_activity": {
+    "users_1_review": 14787425,
+    "users_1_review_pct": 67.55,
+    "users_lt5_reviews": 19861050,
+    "users_lt5_reviews_pct": 90.73,
+    "max_reviews_single_user": 1193017,
+    "buckets": {
+      "1": 14787425,
+      "2-4": 5073625,
+      "5-9": 1330837,
+      "10-19": 509525,
+      "20-49": 170247,
+      "50-99": 17681,
+      "100+": 2064
+    }
+  },
+  "sub_ratings": {
+    "Service": {"count": 35573443, "coverage_pct": 70.77, "avg": 4.29},
+    "Cleanliness": {"count": 26406100, "coverage_pct": 52.53, "avg": 4.33},
+    "Location": {"count": 25521473, "coverage_pct": 50.77, "avg": 4.40},
+    "Value": {"count": 26386737, "coverage_pct": 52.50, "avg": 4.12},
+    "Rooms": {"count": 25416751, "coverage_pct": 50.57, "avg": 4.12},
+    "Sleep Quality": {"count": 22592252, "coverage_pct": 44.95, "avg": 4.21},
+    "Check-In": {"count": 0, "coverage_pct": 0.0, "avg": null},
+    "Business Service": {"count": 0, "coverage_pct": 0.0, "avg": null}
+  },
+  "review_text": {
+    "reviews_with_text": 50264528,
+    "mean_length_words": 127.03,
+    "std_length_words": 130.69,
+    "min_length_words": 1,
+    "max_length_words": 11653,
+    "length_buckets": {
+      "1-10": 22145,
+      "11-50": 11591488,
+      "51-100": 17065375,
+      "101-200": 13699534,
+      "201-500": 6853485,
+      "501+": 1032501
+    }
+  },
+  "temporal": {
+    "2001": 227,
+    "2002": 5769,
+    "2003": 40491,
+    "2004": 101611,
+    "2005": 176003,
+    "2006": 271538,
+    "2007": 400361,
+    "2008": 531618,
+    "2009": 854978,
+    "2010": 1230397,
+    "2011": 2079547,
+    "2012": 3363249,
+    "2013": 4687610,
+    "2014": 5662247,
+    "2015": 7025501,
+    "2016": 8105310,
+    "2017": 7486143,
+    "2018": 6408360,
+    "2019": 1833571
+  }
+}

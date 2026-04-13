@@ -17,13 +17,15 @@ ItemKNN is intentionally simple and non-neural. It runs on CPU in minutes, doesn
 
 ## Dataset
 
-**HotelRec** (Antognini & Faltings, 2020) — scraped from TripAdvisor, covering ~50M hotel reviews across 365K hotels and 22M users.
+**HotelRec** (Antognini & Faltings, 2020) — scraped from TripAdvisor, covering ~50M hotel reviews across 365K hotels and 22M users. Numbers below are from our own scan of the full dataset (`hpa-explore` on all 50M reviews); the paper reports 21,891,294 users and 365,056 items — the small difference is likely from deduplication.
 
 | Subset | Users | Items | Interactions | Sparsity |
 |--------|-------|-------|-------------|----------|
-| Full | 21,891,294 | 365,056 | 50,264,531 | 99.999% |
+| Full | 21,891,404 | 365,057 | 50,264,531 | 99.999% |
 | 5-core | 2,012,162 | 312,081 | 21,108,245 | 99.997% |
 | 20-core | 72,603 | 38,903 | 2,222,373 | 99.921% |
+
+5-core and 20-core numbers are from the paper (we haven't run preprocessing yet). Full-dataset stats are verified — see [`results/data_evaluation.json`](results/data_evaluation.json) for the complete breakdown including rating distribution, sub-rating coverage, user activity buckets, and temporal trends.
 
 We use the **5-core** and **20-core** subsets. Each review provides a userID, itemID, overall rating (1–5), text, and date. We split 80/10/10 for train/validation/test, following the paper.
 

@@ -222,9 +222,18 @@ run_preprocess() {
         fi
     fi
 
-    # check for raw data
-    if [ ! -d "data/raw" ] || [ -z "$(ls data/raw/*.json 2>/dev/null)" ]; then
-        echo "ERROR: No raw JSON files found in data/raw/"
+    # check for raw data (archive OR extracted JSON files)
+    HAS_DATA=false
+    if [ -d "data/raw" ]; then
+        if ls data/raw/*.zip data/raw/*.tar.gz data/raw/*.tgz data/raw/*.tar.bz2 1>/dev/null 2>&1; then
+            HAS_DATA=true
+        elif ls data/raw/*.json data/raw/*.txt 1>/dev/null 2>&1; then
+            HAS_DATA=true
+        fi
+    fi
+    if [ "$HAS_DATA" = false ]; then
+        echo "ERROR: No data found in data/raw/"
+        echo "Expected a .zip/.tar.gz archive or .json files."
         echo "Download the dataset first:"
         echo "  bash scripts/download_data.sh full"
         exit 1
