@@ -104,10 +104,39 @@ python -m src.evaluate --config configs/gmf.yaml --kcore 20
 
 The HPC cluster runs CentOS 7 with GLIBC 2.17. We pin all dependencies in `requirements-hpc.txt` to avoid binary compatibility issues.
 
-### Setup (one-time)
+### SSH key for GitHub (one-time, on login node)
+
+The HPC login node has internet access — generate a key there so you can push/pull:
 
 ```bash
 ssh <sjsu-id>@coe-hpc1.sjsu.edu
+
+# generate key (no passphrase for batch jobs)
+ssh-keygen -t ed25519 -C "your-email@sjsu.edu" -f ~/.ssh/id_ed25519_github -N ""
+
+# print the public key — copy this
+cat ~/.ssh/id_ed25519_github.pub
+
+# add to GitHub: https://github.com/settings/keys → "New SSH key" → paste
+
+# tell SSH to use this key for github.com
+cat >> ~/.ssh/config << 'EOF'
+Host github.com
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/id_ed25519_github
+    IdentitiesOnly yes
+EOF
+
+# test
+ssh -T git@github.com
+# → "Hi <username>! You've successfully authenticated..."
+```
+
+### Clone and setup (one-time)
+
+```bash
+git clone git@github.com:AdityaHegde712/RecSysProject.git HotelRec-HPA
 cd HotelRec-HPA
 bash scripts/run_hpc.sh setup
 source scripts/hpc_aliases.sh
