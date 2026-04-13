@@ -1,8 +1,15 @@
 """
-Preprocess raw HotelRec JSON files into a clean parquet dataset.
+Preprocess raw HotelRec data into a clean parquet dataset.
 
-Raw format: one JSON file per hotel, each containing an array of review objects.
-Output: single parquet with columns [user_id, item_id, rating, text, date, <sub_ratings>],
+The HotelRec dataset (Antognini & Faltings, LREC 2020) is distributed as a
+single large JSON file (~10GB, 50M reviews) from SWITCHdrive. Loading it all
+at once would need 50+ GB RAM, so we stream-parse with ijson and write in
+chunks to parquet.
+
+Each review has:
+  - hotel_url, author, date, rating, title, text, property_dict (sub-ratings)
+
+Output: parquet with columns [user_id, item_id, rating, text, date],
         plus JSON files for user/item ID mappings.
 
 Usage:
@@ -12,12 +19,10 @@ Usage:
 import argparse
 import json
 import os
-from collections import defaultdict
 from pathlib import Path
 
 import pandas as pd
 import yaml
-from tqdm import tqdm
 
 
 def load_config(path: str) -> dict:
@@ -25,47 +30,111 @@ def load_config(path: str) -> dict:
         return yaml.safe_load(f)
 
 
-def parse_hotel_json(fpath: str) -> list[dict]:
-    """Parse a single hotel JSON file and return flat review records."""
-    with open(fpath) as f:
-        reviews = json.load(f)
+# sub-rating keys as they appear in the actual HotelRec property_dict
+SUB_RATING_KEYS = [
+    "service", "cleanliness", "location", "value",
+    "rooms", "sleep quality", "check in / front desk", "business service",
+]
 
-    records = []
-    for r in reviews:
-        rec = {
-            "user_url": r.get("user_url", ""),
-            "hotel_url": r.get("hotel_url", ""),
-            "rating": float(r.get("overall_rating", 0)),
-            "text": r.get("text", ""),
-            "date": r.get("date", ""),
-        }
-        # sub-ratings are optional
-        for sr in [
-            "Service", "Cleanliness", "Location", "Value",
-            "Rooms", "Sleep Quality", "Check-In", "Business Service",
-        ]:
-            val = r.get(sr, None)
-            rec[sr] = float(val) if val is not None else None
-        records.append(rec)
-    return records
+SUB_RATING_COLS = [
+    "Service", "Cleanliness", "Location", "Value",
+    "Rooms", "Sleep Quality", "Check-In", "Business Service",
+]
 
 
-def load_raw_data(raw_dir: str) -> pd.DataFrame:
-    """Load all hotel JSON files from raw_dir into a single DataFrame."""
-    json_files = sorted(Path(raw_dir).glob("*.json"))
+def parse_review(r: dict) -> dict:
+    """Parse a single review dict from the HotelRec JSON format."""
+    rec = {
+        "user_url": r.get("author", r.get("user_url", "")),
+        "hotel_url": r.get("hotel_url", ""),
+        "rating": float(r.get("rating", r.get("overall_rating", 0))),
+        "text": r.get("text", ""),
+        "date": r.get("date", ""),
+    }
+    props = r.get("property_dict", {}) or {}
+    for raw_key, col_name in zip(SUB_RATING_KEYS, SUB_RATING_COLS):
+        val = props.get(raw_key, r.get(col_name, r.get(raw_key, None)))
+        rec[col_name] = float(val) if val is not None else None
+    return rec
+
+
+def stream_reviews(fpath: str):
+    """
+    Stream-parse a large JSON file of reviews without loading it all into RAM.
+
+    Uses ijson if available (handles 10GB+ files in ~2GB RAM).
+    Falls back to chunked reading for smaller files.
+    """
+    try:
+        import ijson
+        print(f"  Using ijson for streaming parse (memory-safe)")
+        with open(fpath, "rb") as f:
+            # ijson.items yields each element of the top-level JSON array
+            for review in ijson.items(f, "item"):
+                yield parse_review(review)
+    except ImportError:
+        # Fallback: load entire file. Only works if you have enough RAM.
+        print(f"  WARNING: ijson not installed. Loading entire file into memory.")
+        print(f"  For large files, install ijson: pip install ijson")
+        with open(fpath) as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            for r in data:
+                yield parse_review(r)
+        else:
+            yield parse_review(data)
+
+
+def load_raw_data(raw_dir: str, chunk_size: int = 500_000) -> pd.DataFrame:
+    """
+    Load HotelRec data from raw_dir. Handles both single-file (HotelRec.json)
+    and multi-file layouts. Streams large files in chunks to limit memory.
+    """
+    raw_path = Path(raw_dir)
+    json_files = sorted(raw_path.glob("*.json"))
     if not json_files:
         raise FileNotFoundError(f"No JSON files found in {raw_dir}")
 
-    all_records = []
-    for fpath in tqdm(json_files, desc="Loading JSON files"):
-        all_records.extend(parse_hotel_json(str(fpath)))
+    print(f"Found {len(json_files)} JSON file(s) in {raw_dir}")
 
-    df = pd.DataFrame(all_records)
-    print(f"Loaded {len(df):,} raw reviews from {len(json_files)} files")
+    all_chunks = []
+    total = 0
+    chunk_buf = []
+
+    for fpath in json_files:
+        fsize = fpath.stat().st_size
+        print(f"  Parsing {fpath.name} ({fsize / 1e9:.1f} GB)...")
+
+        if fsize > 100_000_000:  # > 100MB → stream
+            for rec in stream_reviews(str(fpath)):
+                chunk_buf.append(rec)
+                if len(chunk_buf) >= chunk_size:
+                    df_chunk = pd.DataFrame(chunk_buf)
+                    all_chunks.append(df_chunk)
+                    total += len(chunk_buf)
+                    print(f"    {total:,} reviews processed...")
+                    chunk_buf = []
+        else:
+            # Small file — load directly
+            with open(fpath) as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                for r in data:
+                    chunk_buf.append(parse_review(r))
+            elif isinstance(data, dict):
+                chunk_buf.append(parse_review(data))
+
+    # flush remaining
+    if chunk_buf:
+        all_chunks.append(pd.DataFrame(chunk_buf))
+        total += len(chunk_buf)
+
+    df = pd.concat(all_chunks, ignore_index=True)
+    print(f"Loaded {len(df):,} raw reviews from {len(json_files)} file(s)")
     return df
 
 
-def build_id_maps(df: pd.DataFrame) -> tuple[dict, dict, pd.DataFrame]:
+def build_id_maps(df: pd.DataFrame) -> tuple:
     """Map user_url and hotel_url to contiguous integer IDs."""
     users = sorted(df["user_url"].unique())
     items = sorted(df["hotel_url"].unique())
@@ -83,7 +152,7 @@ def build_id_maps(df: pd.DataFrame) -> tuple[dict, dict, pd.DataFrame]:
 def kcore_filter(df: pd.DataFrame, k: int) -> pd.DataFrame:
     """
     Iteratively remove users and items with fewer than k interactions
-    until convergence. Standard k-core filtering.
+    until convergence.
     """
     prev_len = -1
     iteration = 0
@@ -91,12 +160,10 @@ def kcore_filter(df: pd.DataFrame, k: int) -> pd.DataFrame:
         prev_len = len(df)
         iteration += 1
 
-        # filter users
         user_counts = df["user_id"].value_counts()
         valid_users = user_counts[user_counts >= k].index
         df = df[df["user_id"].isin(valid_users)]
 
-        # filter items
         item_counts = df["item_id"].value_counts()
         valid_items = item_counts[item_counts >= k].index
         df = df[df["item_id"].isin(valid_items)]
@@ -107,7 +174,7 @@ def kcore_filter(df: pd.DataFrame, k: int) -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
-def remap_ids(df: pd.DataFrame) -> tuple[dict, dict, pd.DataFrame]:
+def remap_ids(df: pd.DataFrame) -> tuple:
     """Re-map IDs to contiguous range after k-core filtering."""
     users = sorted(df["user_url"].unique())
     items = sorted(df["hotel_url"].unique())
@@ -152,7 +219,7 @@ def main():
     print(f"k-core: {k}")
     print(f"Raw dir: {raw_dir}")
 
-    # load
+    # load (streaming for large files)
     df = load_raw_data(raw_dir)
 
     # drop reviews with missing rating
@@ -173,7 +240,6 @@ def main():
     # prepare output columns
     sub_ratings = cfg.get("sub_ratings", [])
     keep_cols = ["user_id", "item_id", "rating", "text", "date"] + sub_ratings
-    # only keep sub_rating cols that exist
     keep_cols = [c for c in keep_cols if c in df.columns]
     df = df[keep_cols]
 
@@ -185,7 +251,6 @@ def main():
     df.to_parquet(parquet_path, index=False)
     print(f"\nSaved interactions to {parquet_path}")
 
-    # save ID mappings
     with open(os.path.join(kcore_dir, "user2id.json"), "w") as f:
         json.dump(user2id, f)
     with open(os.path.join(kcore_dir, "item2id.json"), "w") as f:

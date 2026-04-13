@@ -1,21 +1,21 @@
 #!/bin/bash
-# Download HotelRec dataset from GitHub
+# Download HotelRec dataset
 #
-# The HotelRec dataset contains ~50M TripAdvisor hotel reviews stored as
-# JSON files (one per hotel). The full dataset is ~10GB compressed.
+# The dataset is hosted on SWITCHdrive (Swiss academic cloud):
+#   https://drive.switch.ch/index.php/s/n48smsdufhRA7fR
+#
+# It's a single large JSON file (~10GB) containing all 50M reviews.
+# For academic research use only.
 #
 # Usage:
-#   bash scripts/download_data.sh full     # download entire dataset
-#   bash scripts/download_data.sh sample   # download a small subset for testing
+#   bash scripts/download_data.sh full     # download from SWITCHdrive
+#   bash scripts/download_data.sh sample   # generate synthetic data for testing
 #   bash scripts/download_data.sh          # defaults to sample
-#
-# Run this on the LOGIN NODE (has internet access).
 
 set -o pipefail
 
 MODE="${1:-sample}"
 RAW_DIR="data/raw"
-REPO_URL="https://github.com/Diego999/HotelRec"
 
 mkdir -p "$RAW_DIR"
 
@@ -28,136 +28,128 @@ echo "Date: $(date)"
 echo "============================================"
 echo ""
 
-# ─── Full download ────────────────────────────────────────────────────
+# ─── Full download from SWITCHdrive ──────────────────────────────────
 download_full() {
-    echo ">>> Downloading full HotelRec dataset..."
-    echo "    This is ~10GB compressed, ~50GB uncompressed."
+    echo ">>> Downloading HotelRec dataset from SWITCHdrive..."
+    echo "    Source: https://drive.switch.ch/index.php/s/n48smsdufhRA7fR"
+    echo "    This is ~10GB. Make sure you have enough disk space."
     echo ""
 
-    CLONE_DIR="${RAW_DIR}/.hotelrec_repo"
+    DEST="${RAW_DIR}/HotelRec.json"
+    DOWNLOAD_URL="https://drive.switch.ch/index.php/s/n48smsdufhRA7fR/download"
 
-    if [ -d "$CLONE_DIR" ]; then
-        echo "Repository already cloned at ${CLONE_DIR}"
-    else
-        echo "Cloning HotelRec repository (metadata only)..."
-        git clone --depth 1 "$REPO_URL" "$CLONE_DIR" 2>&1 || {
-            echo "ERROR: git clone failed."
-            echo "Try downloading manually from: ${REPO_URL}"
-            exit 1
-        }
-    fi
-
-    # The dataset files are typically distributed via GitHub releases
-    # or external links referenced in the repo README.
-    # Check for release assets first.
-    echo ""
-    echo "Checking for dataset download links..."
-
-    # Try GitHub releases API
-    RELEASES_URL="https://api.github.com/repos/Diego999/HotelRec/releases"
-    RELEASE_INFO=$(curl -s "$RELEASES_URL" 2>/dev/null | head -200)
-
-    if echo "$RELEASE_INFO" | grep -q "browser_download_url"; then
-        echo "Found release assets. Downloading..."
-        DOWNLOAD_URLS=$(echo "$RELEASE_INFO" | grep -o '"browser_download_url": "[^"]*"' | cut -d'"' -f4)
-        for url in $DOWNLOAD_URLS; do
-            fname=$(basename "$url")
-            dest="${RAW_DIR}/${fname}"
-            if [ -f "$dest" ]; then
-                echo "  ${fname}: already exists — skipping"
-            else
-                echo "  Downloading ${fname}..."
-                curl -L -o "$dest" "$url" || echo "  WARNING: failed to download ${fname}"
-            fi
-        done
-    else
-        echo "No release assets found. Checking repo for data files..."
-
-        # Look for JSON files or archives in the cloned repo
-        if ls "${CLONE_DIR}"/*.json 2>/dev/null | head -1 > /dev/null; then
-            echo "Found JSON files in repo. Copying to ${RAW_DIR}/..."
-            cp "${CLONE_DIR}"/*.json "$RAW_DIR/" 2>/dev/null || true
-        elif ls "${CLONE_DIR}"/data/*.json 2>/dev/null | head -1 > /dev/null; then
-            echo "Found JSON files in repo/data/. Copying..."
-            cp "${CLONE_DIR}"/data/*.json "$RAW_DIR/" 2>/dev/null || true
-        fi
-
-        # Check for compressed archives
-        for ext in tar.gz tar.bz2 zip; do
-            for archive in "${CLONE_DIR}"/*."${ext}" "${CLONE_DIR}"/data/*."${ext}"; do
-                if [ -f "$archive" ]; then
-                    echo "Extracting $(basename "$archive")..."
-                    case "$ext" in
-                        tar.gz)  tar xzf "$archive" -C "$RAW_DIR/" ;;
-                        tar.bz2) tar xjf "$archive" -C "$RAW_DIR/" ;;
-                        zip)     unzip -o "$archive" -d "$RAW_DIR/" ;;
-                    esac
-                fi
-            done
-        done
-    fi
-
-    # Check README for external download links (e.g., Zenodo, Google Drive)
-    if [ -f "${CLONE_DIR}/README.md" ]; then
+    if [ -f "$DEST" ]; then
+        SIZE=$(du -h "$DEST" | cut -f1)
+        echo "  File already exists: $DEST ($SIZE)"
+        echo "  Delete it first if you want to re-download."
         echo ""
-        echo "--- README download instructions ---"
-        grep -i -A2 "download\|dataset\|data.*link\|zenodo\|drive.google" "${CLONE_DIR}/README.md" 2>/dev/null | head -20
-        echo "------------------------------------"
+    else
+        echo "  Downloading to $DEST ..."
+        echo "  (This will take a while — ~10GB file)"
+        echo ""
+
+        # Try wget first (better for large files, supports resume)
+        if command -v wget &> /dev/null; then
+            wget -c -O "$DEST" "$DOWNLOAD_URL" || {
+                echo ""
+                echo "ERROR: wget failed. Try manually:"
+                echo "  wget -O $DEST '$DOWNLOAD_URL'"
+                exit 1
+            }
+        elif command -v curl &> /dev/null; then
+            curl -L -C - -o "$DEST" "$DOWNLOAD_URL" || {
+                echo ""
+                echo "ERROR: curl failed. Try manually:"
+                echo "  curl -L -o $DEST '$DOWNLOAD_URL'"
+                exit 1
+            }
+        else
+            echo "ERROR: Neither wget nor curl found."
+            echo "Download manually from: https://drive.switch.ch/index.php/s/n48smsdufhRA7fR"
+            echo "Save to: $DEST"
+            exit 1
+        fi
     fi
+
+    # If it's a zip/tar, extract it
+    if file "$DEST" 2>/dev/null | grep -q "Zip archive"; then
+        echo "  Extracting zip archive..."
+        unzip -o "$DEST" -d "$RAW_DIR/"
+    elif file "$DEST" 2>/dev/null | grep -q "gzip"; then
+        echo "  Extracting gzip archive..."
+        gunzip -k "$DEST" 2>/dev/null || gzip -dk "$DEST"
+    fi
+
+    echo ""
+    echo "  Download complete."
 }
 
-# ─── Sample download ─────────────────────────────────────────────────
+# ─── Sample: generate synthetic data ─────────────────────────────────
 download_sample() {
     echo ">>> Creating sample dataset for development/testing..."
-    echo "    Generating synthetic hotel review data."
+    echo "    Generating synthetic hotel review data matching HotelRec format."
     echo ""
 
-    SAMPLE_DIR="${RAW_DIR}"
-    mkdir -p "$SAMPLE_DIR"
-
-    # Generate a small synthetic dataset that matches the HotelRec JSON format.
-    # This lets us test the full pipeline without downloading 10GB.
     python3 -c "
 import json
 import random
 import os
 
 random.seed(42)
-raw_dir = '${SAMPLE_DIR}'
+raw_dir = '${RAW_DIR}'
 
-# generate 20 hotels with 50-200 reviews each
-num_hotels = 20
-user_pool = [f'user_{i}' for i in range(200)]
+# HotelRec actual format (from the repo README):
+# {
+#   'hotel_url': '...',
+#   'author': 'username',
+#   'date': '2010-02-01T00:00:00',
+#   'rating': 4.0,
+#   'title': 'Great customer service',
+#   'text': '...',
+#   'property_dict': {'sleep quality': 4.0, 'value': 4.0, ...}
+# }
 
-total_reviews = 0
-for h in range(num_hotels):
-    hotel_url = f'hotel_{h:04d}'
-    n_reviews = random.randint(50, 200)
-    reviews = []
-    for r in range(n_reviews):
-        user = random.choice(user_pool)
-        overall = random.randint(1, 5)
+sub_rating_keys = ['sleep quality', 'value', 'rooms', 'service', 'cleanliness', 'location']
+user_pool = [f'user_{i}' for i in range(500)]
+hotel_names = [
+    'Hotel_Review-g{}-d{}-Reviews-Hotel_{}'.format(
+        random.randint(100000, 999999),
+        random.randint(100000, 9999999),
+        f'TestHotel_{h}'
+    ) for h in range(50)
+]
+
+all_reviews = []
+for hotel_url in hotel_names:
+    n_reviews = random.randint(30, 300)
+    for _ in range(n_reviews):
+        overall = float(random.randint(1, 5))
+        # ~70% of reviews have sub-ratings (matching paper stats)
+        prop = {}
+        if random.random() < 0.71:
+            for key in sub_rating_keys:
+                if random.random() < 0.9:  # not all sub-ratings always present
+                    prop[key] = float(random.randint(1, 5))
+
         review = {
-            'user_url': user,
             'hotel_url': hotel_url,
-            'overall_rating': overall,
-            'service': random.randint(1, 5),
-            'cleanliness': random.randint(1, 5),
-            'value': random.randint(1, 5),
-            'location': random.randint(1, 5),
-            'rooms': random.randint(1, 5),
-            'text': f'Sample review {r} for hotel {h}. Rating: {overall}/5.',
-            'date': f'2020-{random.randint(1,12):02d}-{random.randint(1,28):02d}',
+            'author': random.choice(user_pool),
+            'date': f'{random.randint(2005, 2019)}-{random.randint(1,12):02d}-{random.randint(1,28):02d}T00:00:00',
+            'rating': overall,
+            'title': f'Review title {random.randint(1, 10000)}',
+            'text': ' '.join(['word'] * random.randint(20, 300)),
+            'property_dict': prop,
         }
-        reviews.append(review)
-    total_reviews += len(reviews)
+        all_reviews.append(review)
 
-    fpath = os.path.join(raw_dir, f'{hotel_url}.json')
-    with open(fpath, 'w') as f:
-        json.dump(reviews, f)
+# Save as single JSON file (matching the actual HotelRec distribution format)
+fpath = os.path.join(raw_dir, 'HotelRec.json')
+with open(fpath, 'w') as f:
+    json.dump(all_reviews, f)
 
-print(f'  Generated {num_hotels} hotel files, {total_reviews} total reviews')
-print(f'  Saved to {raw_dir}/')
+print(f'  Generated {len(hotel_names)} hotels, {len(all_reviews)} reviews')
+print(f'  Unique users: {len(set(r[\"author\"] for r in all_reviews))}')
+print(f'  Saved to {fpath}')
 " || {
     echo "ERROR: Sample generation failed."
     exit 1
@@ -174,8 +166,8 @@ case "$MODE" in
         ;;
     *)
         echo "Usage: bash scripts/download_data.sh [full|sample]"
-        echo "  full   — download entire HotelRec dataset (~10GB)"
-        echo "  sample — generate small synthetic dataset for testing"
+        echo "  full   — download from SWITCHdrive (~10GB)"
+        echo "  sample — generate synthetic data for testing"
         exit 1
         ;;
 esac
@@ -183,27 +175,26 @@ esac
 # ─── Stats ────────────────────────────────────────────────────────────
 echo ""
 echo "--- Dataset stats ---"
-N_FILES=$(ls "$RAW_DIR"/*.json 2>/dev/null | wc -l)
-if [ "$N_FILES" -gt 0 ]; then
-    TOTAL_SIZE=$(du -sh "$RAW_DIR" 2>/dev/null | cut -f1)
-    echo "  JSON files: ${N_FILES}"
-    echo "  Total size: ${TOTAL_SIZE}"
+if [ -f "${RAW_DIR}/HotelRec.json" ]; then
+    SIZE=$(du -h "${RAW_DIR}/HotelRec.json" | cut -f1)
+    echo "  File: HotelRec.json ($SIZE)"
 
-    # count total reviews across all files
-    TOTAL_REVIEWS=$(python3 -c "
-import json, glob
-total = 0
-for f in sorted(glob.glob('${RAW_DIR}/*.json')):
-    try:
-        with open(f) as fh:
-            total += len(json.load(fh))
-    except:
-        pass
-print(total)
-" 2>/dev/null || echo "?")
-    echo "  Total reviews: ${TOTAL_REVIEWS}"
+    python3 -c "
+import json
+with open('${RAW_DIR}/HotelRec.json') as f:
+    data = json.load(f)
+users = set(r.get('author', r.get('user_url', '')) for r in data)
+hotels = set(r['hotel_url'] for r in data)
+print(f'  Reviews: {len(data):,}')
+print(f'  Users:   {len(users):,}')
+print(f'  Hotels:  {len(hotels):,}')
+" 2>/dev/null || echo "  (Could not parse — file may still be downloading)"
 else
-    echo "  No JSON files found in ${RAW_DIR}/"
-    echo "  Check the download instructions above."
+    N_FILES=$(ls "$RAW_DIR"/*.json 2>/dev/null | wc -l | tr -d ' ')
+    echo "  JSON files: ${N_FILES}"
+    if [ "$N_FILES" -gt 0 ]; then
+        TOTAL_SIZE=$(du -sh "$RAW_DIR" 2>/dev/null | cut -f1)
+        echo "  Total size: ${TOTAL_SIZE}"
+    fi
 fi
 echo "---------------------"
