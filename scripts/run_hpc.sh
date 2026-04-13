@@ -227,18 +227,14 @@ run_preprocess() {
         fi
     fi
 
-    # check for raw data (archive OR extracted JSON files)
-    HAS_DATA=false
-    if [ -d "data/raw" ]; then
-        if ls data/raw/*.zip data/raw/*.tar.gz data/raw/*.tgz data/raw/*.tar.bz2 1>/dev/null 2>&1; then
-            HAS_DATA=true
-        elif ls data/raw/*.json data/raw/*.txt 1>/dev/null 2>&1; then
-            HAS_DATA=true
-        fi
-    fi
-    if [ "$HAS_DATA" = false ]; then
+    # check for raw data — use find instead of glob (more reliable)
+    echo "  Checking for data in $(pwd)/data/raw/ ..."
+    ls -la data/raw/ 2>/dev/null | head -10
+    DATA_COUNT=$(find data/raw -maxdepth 1 -type f \( -name "*.zip" -o -name "*.tar.gz" -o -name "*.tgz" -o -name "*.tar.bz2" -o -name "*.json" -o -name "*.txt" \) 2>/dev/null | wc -l | tr -d ' ')
+    echo "  Found ${DATA_COUNT} data file(s)"
+    if [ "$DATA_COUNT" -eq 0 ]; then
         echo "ERROR: No data found in data/raw/"
-        echo "Expected a .zip/.tar.gz archive or .json files."
+        echo "Expected a .zip/.tar.gz archive or .json/.txt files."
         echo "Download the dataset first:"
         echo "  bash scripts/download_data.sh full"
         exit 1
