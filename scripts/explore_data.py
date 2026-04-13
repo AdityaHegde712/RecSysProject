@@ -94,41 +94,117 @@ def stream_file(fpath: str):
 
 # ── main logic ───────────────────────────────────────────────────────────────
 
-def explore(data_dir: str, sample_size: int = 0):
+def find_data_source(data_dir: str):
+    """
+    Find the data source. Could be:
+    1. An archive (.tar.gz, .tar.bz2, .zip)
+    2. JSON files (one or many)
+    Returns (source_type, path_or_list)
+    """
+    import tarfile as _tarfile
+    import zipfile as _zipfile
+
     data_path = Path(data_dir)
 
-    # Find all data files (json, jsonl, txt — HotelRec uses .txt sometimes)
+    # check for archives
+    for pattern in ["*.tar.gz", "*.tar.bz2", "*.tgz", "*.zip"]:
+        archives = list(data_path.glob(pattern))
+        if archives:
+            return ("archive", archives[0])
+
+    # check for JSON files
     extensions = {".json", ".jsonl", ".txt"}
-    all_files = sorted(
+    json_files = sorted(
         p for p in data_path.iterdir()
         if p.is_file() and p.suffix.lower() in extensions
     )
+    if json_files:
+        return ("json_files", json_files)
 
-    if not all_files:
-        print(f"No data files found in {data_dir}")
+    # check subdirectories
+    for subdir in data_path.iterdir():
+        if subdir.is_dir():
+            sub_jsons = sorted(subdir.glob("*.json"))
+            if sub_jsons:
+                return ("json_files", sub_jsons)
+
+    return (None, None)
+
+
+def stream_archive(archive_path):
+    """Stream reviews from a tar or zip archive without extracting to disk."""
+    import tarfile as _tarfile
+    import zipfile as _zipfile
+
+    path_str = str(archive_path)
+
+    if path_str.endswith(".zip"):
+        with _zipfile.ZipFile(path_str, "r") as zf:
+            for name in zf.namelist():
+                if not name.endswith(".json"):
+                    continue
+                try:
+                    content = zf.read(name).decode("utf-8", errors="replace")
+                    data = json.loads(content)
+                    if isinstance(data, list):
+                        yield from data
+                    elif isinstance(data, dict):
+                        yield data
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    continue
+    else:
+        # tar.gz, tar.bz2, etc.
+        with _tarfile.open(path_str, "r:*") as tar:
+            for member in tar:
+                if not member.isfile() or not member.name.endswith(".json"):
+                    continue
+                f = tar.extractfile(member)
+                if f is None:
+                    continue
+                try:
+                    content = f.read().decode("utf-8", errors="replace")
+                    data = json.loads(content)
+                    if isinstance(data, list):
+                        yield from data
+                    elif isinstance(data, dict):
+                        yield data
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    continue
+                finally:
+                    f.close()
+
+
+def explore(data_dir: str, sample_size: int = 0):
+    data_path = Path(data_dir)
+
+    source_type, source = find_data_source(data_dir)
+
+    if source_type is None:
+        print(f"No data found in {data_dir}")
         print("Downloading sample dataset...")
         import subprocess
         script = Path(__file__).parent / "download_data.sh"
         subprocess.run(["bash", str(script), "sample"], check=True)
-        # re-scan after download
-        all_files = sorted(
-            p for p in data_path.iterdir()
-            if p.is_file() and p.suffix.lower() in extensions
-        )
-        if not all_files:
-            print(f"ERROR: Still no data after download. Check scripts/download_data.sh")
+        source_type, source = find_data_source(data_dir)
+        if source_type is None:
+            print(f"ERROR: Still no data. Check scripts/download_data.sh")
             sys.exit(1)
 
-    total_files = len(all_files)
-    if sample_size > 0:
-        all_files = all_files[:sample_size]
-    n_files = len(all_files)
-
-    print(f"Found {total_files} data files in {data_dir}")
-    if sample_size > 0:
-        print(f"Processing first {n_files} files (--sample_size {sample_size})")
+    if source_type == "archive":
+        print(f"Found archive: {source.name} ({source.stat().st_size / 1e9:.1f} GB)")
+        print("Streaming reviews directly from archive (no extraction needed)")
+        review_stream = stream_archive(source)
+        n_files = 1  # single archive
     else:
-        print(f"Processing all {n_files} files")
+        all_files = source
+        total_files = len(all_files)
+        if sample_size > 0:
+            all_files = all_files[:sample_size]
+        n_files = len(all_files)
+        print(f"Found {total_files} data files in {data_dir}")
+        if sample_size > 0:
+            print(f"Processing first {n_files} files (--sample_size {sample_size})")
+        review_stream = None  # will iterate files below
     print()
 
     # Accumulators
@@ -143,14 +219,23 @@ def explore(data_dir: str, sample_size: int = 0):
     sub_rating_counts = {k: 0 for k in SUB_RATING_KEYS}
     sub_rating_values = {k: [] for k in SUB_RATING_KEYS}
 
-    for idx, fpath in enumerate(all_files):
-        if (idx + 1) % 500 == 0 or idx == 0:
-            print(f"  [{idx + 1}/{n_files}] Processing {fpath.name}...")
+    # Build a unified review iterator
+    if review_stream is not None:
+        # archive mode — already have a generator
+        rec_iter = review_stream
+    else:
+        # file mode — chain all files
+        def _file_iter():
+            for idx, fpath in enumerate(all_files):
+                if (idx + 1) % 500 == 0 or idx == 0:
+                    print(f"  [{idx + 1}/{n_files}] Processing {fpath.name}...")
+                yield from stream_file(str(fpath))
+        rec_iter = _file_iter()
 
-        for rec in stream_file(str(fpath)):
-            total_reviews += 1
-            if total_reviews % 1_000_000 == 0:
-                print(f"    {total_reviews:,} reviews processed...")
+    for rec in rec_iter:
+        total_reviews += 1
+        if total_reviews % 1_000_000 == 0:
+            print(f"    {total_reviews:,} reviews processed...")
 
             # User / item identifiers
             user = rec.get("author") or rec.get("user_url") or rec.get("user_id", "")

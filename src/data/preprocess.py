@@ -2,9 +2,9 @@
 Preprocess raw HotelRec data into a clean parquet dataset.
 
 The HotelRec dataset (Antognini & Faltings, LREC 2020) is distributed as a
-single large JSON file (~10GB, 50M reviews) from SWITCHdrive. Loading it all
-at once would need 50+ GB RAM, so we stream-parse with ijson and write in
-chunks to parquet.
+compressed archive (~10GB) containing ~365K JSON files (one per hotel), totaling
+~50GB uncompressed. We stream directly from the archive to avoid extracting
+everything to disk.
 
 Each review has:
   - hotel_url, author, date, rating, title, text, property_dict (sub-ratings)
@@ -17,8 +17,11 @@ Usage:
 """
 
 import argparse
+import io
 import json
 import os
+import tarfile
+import zipfile
 from pathlib import Path
 
 import pandas as pd
@@ -58,79 +61,159 @@ def parse_review(r: dict) -> dict:
     return rec
 
 
-def stream_reviews(fpath: str):
-    """
-    Stream-parse a large JSON file of reviews without loading it all into RAM.
+def stream_from_tar(archive_path: str):
+    """Stream reviews from a tar.gz or tar.bz2 archive without full extraction."""
+    print(f"  Streaming from tar archive: {archive_path}")
+    n_files = 0
+    with tarfile.open(archive_path, "r:*") as tar:
+        for member in tar:
+            if not member.isfile():
+                continue
+            if not member.name.endswith(".json"):
+                continue
+            n_files += 1
+            f = tar.extractfile(member)
+            if f is None:
+                continue
+            try:
+                content = f.read().decode("utf-8", errors="replace")
+                data = json.loads(content)
+                if isinstance(data, list):
+                    for r in data:
+                        yield parse_review(r)
+                elif isinstance(data, dict):
+                    yield parse_review(data)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                continue
+            finally:
+                f.close()
+            if n_files % 10000 == 0:
+                print(f"    {n_files} hotel files processed...")
+    print(f"  Done: {n_files} hotel files from archive")
 
-    Uses ijson if available (handles 10GB+ files in ~2GB RAM).
-    Falls back to chunked reading for smaller files.
+
+def stream_from_zip(archive_path: str):
+    """Stream reviews from a zip archive without full extraction."""
+    print(f"  Streaming from zip archive: {archive_path}")
+    n_files = 0
+    with zipfile.ZipFile(archive_path, "r") as zf:
+        for name in zf.namelist():
+            if not name.endswith(".json"):
+                continue
+            n_files += 1
+            try:
+                content = zf.read(name).decode("utf-8", errors="replace")
+                data = json.loads(content)
+                if isinstance(data, list):
+                    for r in data:
+                        yield parse_review(r)
+                elif isinstance(data, dict):
+                    yield parse_review(data)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                continue
+            if n_files % 10000 == 0:
+                print(f"    {n_files} hotel files processed...")
+    print(f"  Done: {n_files} hotel files from archive")
+
+
+def stream_from_json(fpath: str):
+    """Stream reviews from a single large JSON file using ijson."""
+    fsize = os.path.getsize(fpath)
+    if fsize > 100_000_000:  # > 100MB
+        try:
+            import ijson
+            print(f"  Streaming {fpath} with ijson ({fsize / 1e9:.1f} GB)")
+            with open(fpath, "rb") as f:
+                for review in ijson.items(f, "item"):
+                    yield parse_review(review)
+            return
+        except ImportError:
+            print("  WARNING: ijson not installed. pip install ijson")
+            print("  Loading entire file into memory...")
+
+    with open(fpath) as f:
+        data = json.load(f)
+    if isinstance(data, list):
+        for r in data:
+            yield parse_review(r)
+    else:
+        yield parse_review(data)
+
+
+def find_data_source(raw_dir: str):
     """
-    try:
-        import ijson
-        print(f"  Using ijson for streaming parse (memory-safe)")
-        with open(fpath, "rb") as f:
-            # ijson.items yields each element of the top-level JSON array
-            for review in ijson.items(f, "item"):
-                yield parse_review(review)
-    except ImportError:
-        # Fallback: load entire file. Only works if you have enough RAM.
-        print(f"  WARNING: ijson not installed. Loading entire file into memory.")
-        print(f"  For large files, install ijson: pip install ijson")
-        with open(fpath) as f:
-            data = json.load(f)
-        if isinstance(data, list):
-            for r in data:
-                yield parse_review(r)
-        else:
-            yield parse_review(data)
+    Find the data source in raw_dir. Could be:
+    1. An archive file (.tar.gz, .tar.bz2, .zip)
+    2. A single large JSON file
+    3. Multiple JSON files (one per hotel)
+    Returns (source_type, path_or_paths)
+    """
+    raw_path = Path(raw_dir)
+
+    # check for archives first
+    for ext in ["*.tar.gz", "*.tar.bz2", "*.tgz", "*.zip"]:
+        archives = list(raw_path.glob(ext))
+        if archives:
+            return ("archive", archives[0])
+
+    # check for JSON files
+    json_files = sorted(raw_path.glob("*.json"))
+    if json_files:
+        if len(json_files) == 1:
+            return ("single_json", json_files[0])
+        return ("multi_json", json_files)
+
+    # check subdirectories (archive might extract into a subfolder)
+    for subdir in raw_path.iterdir():
+        if subdir.is_dir():
+            sub_jsons = list(subdir.glob("*.json"))
+            if sub_jsons:
+                return ("multi_json", sorted(sub_jsons))
+
+    raise FileNotFoundError(
+        f"No data found in {raw_dir}. Expected .tar.gz/.zip archive or .json files.\n"
+        f"Download with: bash scripts/download_data.sh full"
+    )
 
 
 def load_raw_data(raw_dir: str, chunk_size: int = 500_000) -> pd.DataFrame:
-    """
-    Load HotelRec data from raw_dir. Handles both single-file (HotelRec.json)
-    and multi-file layouts. Streams large files in chunks to limit memory.
-    """
-    raw_path = Path(raw_dir)
-    json_files = sorted(raw_path.glob("*.json"))
-    if not json_files:
-        raise FileNotFoundError(f"No JSON files found in {raw_dir}")
-
-    print(f"Found {len(json_files)} JSON file(s) in {raw_dir}")
+    """Load HotelRec data, streaming from archive or JSON files."""
+    source_type, source = find_data_source(raw_dir)
+    print(f"Data source: {source_type} → {source}")
 
     all_chunks = []
     total = 0
     chunk_buf = []
 
-    for fpath in json_files:
-        fsize = fpath.stat().st_size
-        print(f"  Parsing {fpath.name} ({fsize / 1e9:.1f} GB)...")
-
-        if fsize > 100_000_000:  # > 100MB → stream
-            for rec in stream_reviews(str(fpath)):
-                chunk_buf.append(rec)
-                if len(chunk_buf) >= chunk_size:
-                    df_chunk = pd.DataFrame(chunk_buf)
-                    all_chunks.append(df_chunk)
-                    total += len(chunk_buf)
-                    print(f"    {total:,} reviews processed...")
-                    chunk_buf = []
+    if source_type == "archive":
+        archive_path = str(source)
+        if archive_path.endswith(".zip"):
+            gen = stream_from_zip(archive_path)
         else:
-            # Small file — load directly
-            with open(fpath) as f:
-                data = json.load(f)
-            if isinstance(data, list):
-                for r in data:
-                    chunk_buf.append(parse_review(r))
-            elif isinstance(data, dict):
-                chunk_buf.append(parse_review(data))
+            gen = stream_from_tar(archive_path)
+    elif source_type == "single_json":
+        gen = stream_from_json(str(source))
+    else:
+        # multi_json: iterate over files
+        def multi_gen():
+            for fpath in source:
+                yield from stream_from_json(str(fpath))
+        gen = multi_gen()
 
-    # flush remaining
+    for rec in gen:
+        chunk_buf.append(rec)
+        if len(chunk_buf) >= chunk_size:
+            all_chunks.append(pd.DataFrame(chunk_buf))
+            total += len(chunk_buf)
+            print(f"  {total:,} reviews loaded...")
+            chunk_buf = []
+
     if chunk_buf:
         all_chunks.append(pd.DataFrame(chunk_buf))
         total += len(chunk_buf)
 
     df = pd.concat(all_chunks, ignore_index=True)
-    print(f"Loaded {len(df):,} raw reviews from {len(json_files)} file(s)")
+    print(f"Loaded {len(df):,} total reviews")
     return df
 
 
@@ -150,10 +233,7 @@ def build_id_maps(df: pd.DataFrame) -> tuple:
 
 
 def kcore_filter(df: pd.DataFrame, k: int) -> pd.DataFrame:
-    """
-    Iteratively remove users and items with fewer than k interactions
-    until convergence.
-    """
+    """Iteratively remove users/items with fewer than k interactions."""
     prev_len = -1
     iteration = 0
     while len(df) != prev_len:
@@ -219,7 +299,7 @@ def main():
     print(f"k-core: {k}")
     print(f"Raw dir: {raw_dir}")
 
-    # load (streaming for large files)
+    # load (streaming from archive or JSON)
     df = load_raw_data(raw_dir)
 
     # drop reviews with missing rating
