@@ -20,6 +20,7 @@ data/processed/
 # Outputs (keep evaluation JSONs, ignore model checkpoints and logs)
 results/*
 !results/data_evaluation.json
+!results/baselines/
 logs/
 checkpoints/
 

@@ -119,7 +119,7 @@ def test_itemknn_predict():
 
 
 def test_ranking_metrics():
-    from src.metrics.ranking import hit_ratio, ndcg
+    from src.evaluation.ranking import hit_ratio, ndcg
 
     ranked = [5, 3, 1, 7, 2]
     gt = 3

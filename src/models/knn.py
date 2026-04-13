@@ -1,137 +1,116 @@
 """
-Item-based K-Nearest Neighbors collaborative filtering (Sarwar et al., 2001).
+ItemKNN baseline using scipy sparse cosine similarity.
 
-Builds a sparse user-item interaction matrix, computes item-item cosine
-similarity, and recommends items similar to those the user has already
-interacted with. No neural network — just linear algebra.
+Standard item-based k-nearest-neighbor collaborative filtering.
+Computes item-item cosine similarity from the sparse user-item matrix,
+then predicts scores via weighted similarity to a user's past items.
+
+Reference: Sarwar et al. (2001), "Item-Based Collaborative Filtering
+Recommendation Algorithms", WWW 2001.
 """
 
 import numpy as np
 import pandas as pd
+import torch
 from scipy import sparse
 from sklearn.metrics.pairwise import cosine_similarity
 
 
 class ItemKNN:
-    """
-    Item-based collaborative filtering with cosine similarity.
+    """Item-based KNN using sparse cosine similarity."""
 
-    For each item, we keep only the top-k most similar neighbors to avoid
-    blowing up memory on large catalogs. Recommendations are scored by
-    summing similarities to items in the user's history.
-    """
+    def __init__(self, k: int = 20, n_users: int = 0, n_items: int = 0):
+        self.k = k
+        self.n_users = n_users
+        self.n_items = n_items
+        self.sim = None          # sparse item-item similarity
+        self.user_item = None    # sparse user-item matrix
 
-    def __init__(self, k_neighbors: int = 50):
-        self.k = k_neighbors
-        self.sim_matrix = None          # (num_items, num_items) sparse
-        self.interaction_matrix = None  # (num_users, num_items) sparse
-        self.num_users = 0
-        self.num_items = 0
-
-    def fit(self, train_df: pd.DataFrame, num_users: int, num_items: int):
-        """
-        Build the item-item similarity matrix from training interactions.
-
-        Args:
-            train_df: DataFrame with columns 'user_id' and 'item_id'
-            num_users: total number of users (for matrix dimensions)
-            num_items: total number of items (for matrix dimensions)
-        """
-        self.num_users = num_users
-        self.num_items = num_items
-
-        # Build sparse binary interaction matrix (users x items)
+    def fit(self, train_df: pd.DataFrame, n_users: int = 0, n_items: int = 0):
+        """Fit ItemKNN: build sparse interaction matrix and item similarity."""
         users = train_df["user_id"].values
         items = train_df["item_id"].values
-        data = np.ones(len(users), dtype=np.float32)
-        self.interaction_matrix = sparse.csr_matrix(
-            (data, (users, items)), shape=(num_users, num_items)
+
+        # Use explicit ratings if available, else binary
+        if "rating" in train_df.columns:
+            data = train_df["rating"].values.astype(np.float32)
+        else:
+            data = np.ones(len(users), dtype=np.float32)
+
+        if n_users > 0:
+            self.n_users = n_users
+        elif self.n_users == 0:
+            self.n_users = int(users.max()) + 1
+
+        if n_items > 0:
+            self.n_items = n_items
+        elif self.n_items == 0:
+            self.n_items = int(items.max()) + 1
+
+        self.user_item = sparse.csr_matrix(
+            (data, (users, items)),
+            shape=(self.n_users, self.n_items),
         )
+        print(f"  ItemKNN: built {self.n_users}x{self.n_items} matrix, "
+              f"nnz={self.user_item.nnz:,}")
 
-        # Compute item-item cosine similarity in batches to avoid OOM.
-        # cosine_similarity on sparse input is efficient, but the output
-        # is dense (num_items x num_items) which can be huge. We process
-        # in chunks and keep only top-k per row.
-        batch_size = 1000
-        sim_rows = []
-        sim_cols = []
-        sim_vals = []
+        # Item-item cosine similarity
+        item_feat = self.user_item.T.tocsr()
+        print(f"  Computing item-item cosine similarity...")
+        full_sim = cosine_similarity(item_feat, dense_output=False)
 
-        item_matrix = self.interaction_matrix.T.tocsr()  # (items x users)
+        # Keep only top-k neighbors per item
+        print(f"  Sparsifying to top-{self.k} neighbors per item...")
+        rows, cols, vals = [], [], []
+        full_sim_csr = full_sim.tocsr()
+        for i in range(self.n_items):
+            row = full_sim_csr.getrow(i).toarray().ravel()
+            row[i] = 0  # exclude self-similarity
+            if self.k < len(row):
+                top_k_idx = np.argpartition(row, -self.k)[-self.k:]
+                for j in top_k_idx:
+                    if row[j] > 0:
+                        rows.append(i)
+                        cols.append(j)
+                        vals.append(row[j])
+            else:
+                nz = np.nonzero(row)[0]
+                for j in nz:
+                    rows.append(i)
+                    cols.append(j)
+                    vals.append(row[j])
 
-        for start in range(0, num_items, batch_size):
-            end = min(start + batch_size, num_items)
-            # similarity of items[start:end] against all items
-            chunk_sim = cosine_similarity(
-                item_matrix[start:end], item_matrix
-            )  # (chunk_size, num_items)
-
-            for local_idx in range(chunk_sim.shape[0]):
-                global_idx = start + local_idx
-                row = chunk_sim[local_idx]
-                # zero out self-similarity
-                row[global_idx] = 0.0
-
-                # keep only top-k neighbors
-                if self.k < num_items:
-                    top_k_idx = np.argpartition(row, -self.k)[-self.k:]
-                    top_k_vals = row[top_k_idx]
-                    # filter out zeros
-                    mask = top_k_vals > 0
-                    top_k_idx = top_k_idx[mask]
-                    top_k_vals = top_k_vals[mask]
-                else:
-                    nonzero = np.nonzero(row)[0]
-                    top_k_idx = nonzero
-                    top_k_vals = row[nonzero]
-
-                sim_rows.extend([global_idx] * len(top_k_idx))
-                sim_cols.extend(top_k_idx.tolist())
-                sim_vals.extend(top_k_vals.tolist())
-
-        self.sim_matrix = sparse.csr_matrix(
-            (sim_vals, (sim_rows, sim_cols)),
-            shape=(num_items, num_items),
+        self.sim = sparse.csr_matrix(
+            (vals, (rows, cols)),
+            shape=(self.n_items, self.n_items),
         )
+        print(f"  ItemKNN: fit done, sim nnz={self.sim.nnz:,}")
+        return self
 
-        n_nonzero = self.sim_matrix.nnz
-        print(f"  ItemKNN fitted: {num_users:,} users, {num_items:,} items, "
-              f"{n_nonzero:,} similarity entries (k={self.k})")
-
-    def recommend(self, user_id: int, k: int = 10,
-                  exclude_seen: bool = True) -> list[int]:
+    def predict_batch(self, users: torch.Tensor, items: torch.Tensor) -> torch.Tensor:
         """
-        Return top-k recommended item IDs for a user.
-
-        Scores each item by summing its similarity to items the user
-        has already interacted with.
+        Predict scores for candidate items (used by evaluation framework).
+        users: (batch_size,)
+        items: (batch_size, num_candidates)
+        Returns: (batch_size, num_candidates) scores
         """
-        if user_id >= self.num_users:
-            return []
+        batch_size, num_candidates = items.shape
+        scores = np.zeros((batch_size, num_candidates), dtype=np.float32)
 
-        # user's interaction vector: (1, num_items) sparse
-        user_vec = self.interaction_matrix[user_id]
+        for b in range(batch_size):
+            u = users[b].item()
+            user_vec = self.user_item.getrow(u)
+            if user_vec.nnz == 0:
+                continue
+            candidate_ids = items[b].numpy()
+            sim_rows = self.sim[candidate_ids]
+            candidate_scores = sim_rows.dot(user_vec.T).toarray().ravel()
+            scores[b] = candidate_scores
 
-        # score all items: sum of similarities to user's history
-        # scores = sim_matrix.T @ user_vec.T → (num_items, 1)
-        scores = self.sim_matrix.T.dot(user_vec.T).toarray().flatten()
-
-        if exclude_seen:
-            seen = user_vec.indices
-            scores[seen] = -np.inf
-
-        top_k = np.argpartition(scores, -k)[-k:]
-        top_k = top_k[np.argsort(scores[top_k])[::-1]]
-        return top_k.tolist()
+        return torch.from_numpy(scores).float()
 
     def predict(self, user_ids, item_ids):
-        """
-        Score specific (user, item) pairs.
-
-        Can accept:
-        - Two scalars: predict(u, i) → float
-        - Two arrays: predict([u1,u2], [i1,i2]) → np.ndarray
-        """
+        """Score specific (user, item) pairs. Accepts scalars or arrays."""
         scalar = np.isscalar(user_ids)
         if scalar:
             user_ids = [user_ids]
@@ -143,14 +122,30 @@ class ItemKNN:
 
         for idx in range(len(user_ids)):
             u, i = int(user_ids[idx]), int(item_ids[idx])
-            if u >= self.num_users or i >= self.num_items:
+            if u >= self.n_users or i >= self.n_items:
                 continue
-            user_vec = self.interaction_matrix[u]
-            # similarity of item i to all items the user interacted with
-            sim_to_history = self.sim_matrix[i, :].toarray().flatten()
+            user_vec = self.user_item.getrow(u)
+            sim_to_history = self.sim[i, :].toarray().flatten()
             history_items = user_vec.indices
             scores[idx] = sim_to_history[history_items].sum()
 
         if scalar:
             return float(scores[0])
         return scores
+
+    def recommend(self, user_id: int, k: int = 10,
+                  exclude_seen: bool = True) -> list[int]:
+        """Return top-k recommended item IDs for a user."""
+        if user_id >= self.n_users:
+            return []
+
+        user_vec = self.user_item[user_id]
+        scores = self.sim.T.dot(user_vec.T).toarray().flatten()
+
+        if exclude_seen:
+            seen = user_vec.indices
+            scores[seen] = -np.inf
+
+        top_k = np.argpartition(scores, -k)[-k:]
+        top_k = top_k[np.argsort(scores[top_k])[::-1]]
+        return top_k.tolist()

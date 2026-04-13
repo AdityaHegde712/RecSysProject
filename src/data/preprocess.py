@@ -1,31 +1,22 @@
 """
 Preprocess raw HotelRec data into a clean parquet dataset.
 
-The HotelRec dataset (Antognini & Faltings, LREC 2020) is distributed as a
-compressed archive (~10GB) containing ~365K JSON files (one per hotel), totaling
-~50GB uncompressed. We stream directly from the archive to avoid extracting
-everything to disk.
-
-Each review has:
-  - hotel_url, author, date, rating, title, text, property_dict (sub-ratings)
-
-Output: parquet with columns [user_id, item_id, rating, text, date],
-        plus JSON files for user/item ID mappings.
+Uses a two-pass approach to handle 50M reviews without OOM:
+  Pass 1: Count user/item frequencies, compute k-core membership (no text in memory)
+  Pass 2: Re-read file, only keep rows that survive k-core filter
 
 Usage:
     python -m src.data.preprocess --kcore 20 --config configs/data.yaml
 """
 
 import argparse
-import io
 import json
 import os
-import tarfile
-import zipfile
-from pathlib import Path
+from collections import Counter
 
 import pandas as pd
 import yaml
+from tqdm import tqdm
 
 
 def load_config(path: str) -> dict:
@@ -33,294 +24,147 @@ def load_config(path: str) -> dict:
         return yaml.safe_load(f)
 
 
-# sub-rating keys as they appear in the actual HotelRec property_dict
-SUB_RATING_KEYS = [
-    "service", "cleanliness", "location", "value",
-    "rooms", "sleep quality", "check in / front desk", "business service",
-]
-
-SUB_RATING_COLS = [
-    "Service", "Cleanliness", "Location", "Value",
-    "Rooms", "Sleep Quality", "Check-In", "Business Service",
-]
-
-
-def parse_review(r: dict) -> dict:
-    """Parse a single review dict from the HotelRec JSON format."""
-    rec = {
-        "user_url": r.get("author", r.get("user_url", "")),
-        "hotel_url": r.get("hotel_url", ""),
-        "rating": float(r.get("rating", r.get("overall_rating", 0))),
-        "text": r.get("text", ""),
-        "date": r.get("date", ""),
-    }
-    props = r.get("property_dict", {}) or {}
-    for raw_key, col_name in zip(SUB_RATING_KEYS, SUB_RATING_COLS):
-        val = props.get(raw_key, r.get(col_name, r.get(raw_key, None)))
-        rec[col_name] = float(val) if val is not None else None
-    return rec
-
-
-def stream_from_tar(archive_path: str):
-    """Stream reviews from a tar.gz or tar.bz2 archive without full extraction."""
-    print(f"  Streaming from tar archive: {archive_path}")
-    n_files = 0
-    with tarfile.open(archive_path, "r:*") as tar:
-        for member in tar:
-            if not member.isfile():
-                continue
-            if not (member.name.endswith(".json") or member.name.endswith(".txt")):
-                continue
-            n_files += 1
-            f = tar.extractfile(member)
-            if f is None:
-                continue
-            try:
-                if member.size > 100_000_000:  # > 100MB → stream line-by-line (JSONL)
-                    print(f"  Reading {member.name} ({member.size / 1e9:.1f} GB uncompressed)")
-                    text_stream = io.TextIOWrapper(f, encoding="utf-8", errors="replace")
-                    for line in text_stream:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            yield parse_review(json.loads(line))
-                        except json.JSONDecodeError:
-                            continue
-                else:
-                    content = f.read().decode("utf-8", errors="replace")
-                    data = json.loads(content)
-                    if isinstance(data, list):
-                        for r in data:
-                            yield parse_review(r)
-                    elif isinstance(data, dict):
-                        yield parse_review(data)
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                continue
-            finally:
-                f.close()
-            if n_files % 10000 == 0:
-                print(f"    {n_files} hotel files processed...")
-    print(f"  Done: {n_files} hotel files from archive")
-
-
-def stream_from_zip(archive_path: str):
-    """Stream reviews from a zip archive. Handles both multi-file and single-file layouts."""
-    print(f"  Streaming from zip: {archive_path}")
-    with zipfile.ZipFile(archive_path, "r") as zf:
-        for info in zf.infolist():
-            if info.is_dir():
-                continue
-            name = info.filename
-            # accept .json and .txt files
-            if not (name.endswith(".json") or name.endswith(".txt")):
-                continue
-
-            print(f"  Reading {name} ({info.file_size / 1e9:.1f} GB uncompressed)")
-
-            if info.file_size > 100_000_000:  # > 100MB → stream line-by-line (JSONL)
-                with zf.open(name) as f:
-                    text_stream = io.TextIOWrapper(f, encoding="utf-8", errors="replace")
-                    n = 0
-                    for line in text_stream:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            yield parse_review(json.loads(line))
-                            n += 1
-                            if n % 1_000_000 == 0:
-                                print(f"    {n:,} reviews streamed...")
-                        except json.JSONDecodeError:
-                            continue
-                    print(f"  Done: {n:,} reviews from {name}")
-                continue
-
-            # Small file — load directly
-            try:
-                content = zf.read(name).decode("utf-8", errors="replace")
-                data = json.loads(content)
-                if isinstance(data, list):
-                    for r in data:
-                        yield parse_review(r)
-                elif isinstance(data, dict):
-                    yield parse_review(data)
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                continue
-
-
-def stream_from_json(fpath: str):
-    """Stream reviews from a single JSON or JSONL file."""
-    fsize = os.path.getsize(fpath)
-
-    if fsize > 100_000_000:  # > 100MB → stream line-by-line (JSONL)
-        print(f"  Streaming {fpath} line-by-line ({fsize / 1e9:.1f} GB)")
-        with open(fpath, "r", encoding="utf-8", errors="replace") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    yield parse_review(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
-        return
-
-    # Small file — try JSON array first, fall back to JSONL
-    with open(fpath, "r", encoding="utf-8", errors="replace") as f:
-        content = f.read()
-
-    content_stripped = content.lstrip()
-    if content_stripped.startswith("["):
-        try:
-            data = json.loads(content)
-            for r in (data if isinstance(data, list) else [data]):
-                yield parse_review(r)
-            return
-        except json.JSONDecodeError:
-            pass
-
-    # JSONL fallback
-    for line in content.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            yield parse_review(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-
-
-def find_data_source(raw_dir: str):
+def compute_kcore_sets(raw_path: str, k: int) -> tuple[set, set, dict]:
     """
-    Find the data source in raw_dir. Could be:
-    1. An archive file (.tar.gz, .tar.bz2, .zip)
-    2. A single large JSON file
-    3. Multiple JSON files (one per hotel)
-    Returns (source_type, path_or_paths)
+    Pass 1: read only user/item/rating fields, compute k-core membership.
+    Returns (valid_users, valid_items, full_stats_dict).
     """
-    raw_path = Path(raw_dir)
-
-    # check for archives first
-    for ext in ["*.tar.gz", "*.tar.bz2", "*.tgz", "*.zip"]:
-        archives = list(raw_path.glob(ext))
-        if archives:
-            return ("archive", archives[0])
-
-    # check for JSON / TXT files
-    data_extensions = {".json", ".txt"}
-    data_files = sorted(
-        p for p in raw_path.iterdir()
-        if p.is_file() and p.suffix.lower() in data_extensions
-    )
-    if data_files:
-        if len(data_files) == 1:
-            return ("single_json", data_files[0])
-        return ("multi_json", data_files)
-
-    # check subdirectories (archive might extract into a subfolder)
-    for subdir in raw_path.iterdir():
-        if subdir.is_dir():
-            sub_files = sorted(
-                p for p in subdir.iterdir()
-                if p.is_file() and p.suffix.lower() in data_extensions
-            )
-            if sub_files:
-                return ("multi_json", sub_files)
-
-    raise FileNotFoundError(
-        f"No data found in {raw_dir}. Expected .tar.gz/.zip archive or .json/.txt files.\n"
-        f"Download with: bash scripts/download_data.sh full"
-    )
-
-
-def load_raw_data(raw_dir: str, chunk_size: int = 500_000) -> pd.DataFrame:
-    """Load HotelRec data, streaming from archive or JSON files."""
-    source_type, source = find_data_source(raw_dir)
-    print(f"Data source: {source_type} → {source}")
-
-    all_chunks = []
+    print(f"Pass 1: counting user/item frequencies...")
+    user_counts = Counter()
+    item_counts = Counter()
     total = 0
-    chunk_buf = []
+    n_valid = 0
 
-    if source_type == "archive":
-        archive_path = str(source)
-        if archive_path.endswith(".zip"):
-            gen = stream_from_zip(archive_path)
-        else:
-            gen = stream_from_tar(archive_path)
-    elif source_type == "single_json":
-        gen = stream_from_json(str(source))
-    else:
-        # multi_json: iterate over files
-        def multi_gen():
-            for fpath in source:
-                yield from stream_from_json(str(fpath))
-        gen = multi_gen()
+    with open(raw_path, "r", encoding="utf-8") as f:
+        for line in tqdm(f, desc="Pass 1 (counting)", total=50_264_531):
+            total += 1
+            r = json.loads(line.strip())
+            rating = float(r.get("rating", 0))
+            user = r.get("author", "")
+            item = r.get("hotel_url", "")
+            if rating > 0 and user and item:
+                user_counts[user] += 1
+                item_counts[item] += 1
+                n_valid += 1
 
-    for rec in gen:
-        chunk_buf.append(rec)
-        if len(chunk_buf) >= chunk_size:
-            all_chunks.append(pd.DataFrame(chunk_buf))
-            total += len(chunk_buf)
-            print(f"  {total:,} reviews loaded...", flush=True)
-            chunk_buf = []
+    full_stats = {
+        "total_raw": total,
+        "total_valid": n_valid,
+        "n_users_full": len(user_counts),
+        "n_items_full": len(item_counts),
+    }
+    print(f"  Total raw: {total:,}, valid: {n_valid:,}")
+    print(f"  Users: {len(user_counts):,}, Items: {len(item_counts):,}")
 
-    if chunk_buf:
-        all_chunks.append(pd.DataFrame(chunk_buf))
-        total += len(chunk_buf)
+    print(f"\nComputing {k}-core membership...")
+    user_items = {}
+    item_users = {}
 
-    print(f"  Concatenating {len(all_chunks)} chunks...", flush=True)
-    df = pd.concat(all_chunks, ignore_index=True)
-    print(f"Loaded {len(df):,} total reviews", flush=True)
+    with open(raw_path, "r", encoding="utf-8") as f:
+        for line in tqdm(f, desc="Pass 1b (building graph)", total=50_264_531):
+            r = json.loads(line.strip())
+            rating = float(r.get("rating", 0))
+            user = r.get("author", "")
+            item = r.get("hotel_url", "")
+            if rating > 0 and user and item:
+                if user not in user_items:
+                    user_items[user] = set()
+                user_items[user].add(item)
+                if item not in item_users:
+                    item_users[item] = set()
+                item_users[item].add(user)
+
+    iteration = 0
+    changed = True
+    while changed:
+        changed = False
+        iteration += 1
+
+        users_to_remove = [u for u, items in user_items.items() if len(items) < k]
+        if users_to_remove:
+            changed = True
+            for u in users_to_remove:
+                for item in user_items[u]:
+                    item_users[item].discard(u)
+                del user_items[u]
+
+        items_to_remove = [i for i, users in item_users.items() if len(users) < k]
+        if items_to_remove:
+            changed = True
+            for i in items_to_remove:
+                for user in item_users[i]:
+                    user_items[user].discard(i)
+                del item_users[i]
+
+        n_users = len(user_items)
+        n_items = len(item_users)
+        n_inter = sum(len(v) for v in user_items.values())
+        print(f"  k-core iter {iteration}: {n_inter:,} interactions, "
+              f"{n_users:,} users, {n_items:,} items")
+
+    valid_users = set(user_items.keys())
+    valid_items = set(item_users.keys())
+
+    n_inter = sum(len(v) for v in user_items.values())
+    sparsity = 1.0 - n_inter / (len(valid_users) * len(valid_items)) if valid_users and valid_items else 1.0
+
+    full_stats.update({
+        "n_users_kcore": len(valid_users),
+        "n_items_kcore": len(valid_items),
+        "n_interactions_kcore": n_inter,
+        "sparsity_kcore": sparsity,
+    })
+
+    print(f"\n--- {k}-core Statistics ---")
+    print(f"Users:        {len(valid_users):,}")
+    print(f"Items:        {len(valid_items):,}")
+    print(f"Interactions: {n_inter:,}")
+    print(f"Sparsity:     {sparsity:.6f}")
+
+    return valid_users, valid_items, full_stats
+
+
+def load_filtered_data(raw_path: str, valid_users: set, valid_items: set) -> pd.DataFrame:
+    """Pass 2: re-read file, only keeping rows in the k-core."""
+    records = []
+
+    with open(raw_path, "r", encoding="utf-8") as f:
+        for line in tqdm(f, desc="Pass 2 (loading k-core)", total=50_264_531):
+            r = json.loads(line.strip())
+            rating = float(r.get("rating", 0))
+            user = r.get("author", "")
+            item = r.get("hotel_url", "")
+
+            if rating <= 0 or not user or not item:
+                continue
+            if user not in valid_users or item not in valid_items:
+                continue
+
+            prop = r.get("property_dict", {})
+            records.append({
+                "user_url": user,
+                "hotel_url": item,
+                "rating": rating,
+                "text": r.get("text", ""),
+                "date": r.get("date", ""),
+                "title": r.get("title", ""),
+                "service": prop.get("service"),
+                "cleanliness": prop.get("cleanliness"),
+                "location": prop.get("location"),
+                "value": prop.get("value"),
+                "rooms": prop.get("rooms"),
+                "sleep_quality": prop.get("sleep quality"),
+                "check_in": prop.get("check in", prop.get("check-in")),
+                "business_service": prop.get("business service"),
+            })
+
+    df = pd.DataFrame(records)
+    print(f"Loaded {len(df):,} k-core reviews")
     return df
 
 
-def build_id_maps(df):
+def build_id_maps(df: pd.DataFrame) -> tuple[dict, dict, pd.DataFrame]:
     """Map user_url and hotel_url to contiguous integer IDs."""
-    print("  Finding unique users...", flush=True)
-    users = sorted(df["user_url"].unique())
-    print(f"  Finding unique items... ({len(users):,} users found)", flush=True)
-    items = sorted(df["hotel_url"].unique())
-    print(f"  Building ID maps... ({len(items):,} items found)", flush=True)
-
-    user2id = {u: i for i, u in enumerate(users)}
-    item2id = {it: i for i, it in enumerate(items)}
-
-    print("  Mapping IDs to DataFrame...", flush=True)
-    df = df.copy()
-    df["user_id"] = df["user_url"].map(user2id)
-    df["item_id"] = df["hotel_url"].map(item2id)
-
-    print("  ID mapping done.", flush=True)
-    return user2id, item2id, df
-
-
-def kcore_filter(df: pd.DataFrame, k: int) -> pd.DataFrame:
-    """Iteratively remove users/items with fewer than k interactions."""
-    prev_len = -1
-    iteration = 0
-    while len(df) != prev_len:
-        prev_len = len(df)
-        iteration += 1
-
-        user_counts = df["user_id"].value_counts()
-        valid_users = user_counts[user_counts >= k].index
-        df = df[df["user_id"].isin(valid_users)]
-
-        item_counts = df["item_id"].value_counts()
-        valid_items = item_counts[item_counts >= k].index
-        df = df[df["item_id"].isin(valid_items)]
-
-        print(f"  k-core iter {iteration}: {len(df):,} interactions, "
-              f"{df['user_id'].nunique():,} users, {df['item_id'].nunique():,} items",
-              flush=True)
-
-    return df.reset_index(drop=True)
-
-
-def remap_ids(df: pd.DataFrame) -> tuple:
-    """Re-map IDs to contiguous range after k-core filtering."""
     users = sorted(df["user_url"].unique())
     items = sorted(df["hotel_url"].unique())
 
@@ -332,63 +176,52 @@ def remap_ids(df: pd.DataFrame) -> tuple:
     df["item_id"] = df["hotel_url"].map(item2id)
 
     return user2id, item2id, df
-
-
-def print_stats(df: pd.DataFrame, label: str = ""):
-    n_users = df["user_id"].nunique()
-    n_items = df["item_id"].nunique()
-    n_inter = len(df)
-    sparsity = 1.0 - n_inter / (n_users * n_items)
-    print(f"\n--- {label} Statistics ---")
-    print(f"Users:        {n_users:,}")
-    print(f"Items:        {n_items:,}")
-    print(f"Interactions: {n_inter:,}")
-    print(f"Sparsity:     {sparsity:.6f}")
-    print(f"Avg reviews/user: {n_inter / n_users:.1f}")
-    print(f"Avg reviews/item: {n_inter / n_items:.1f}")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Preprocess HotelRec data")
-    parser.add_argument("--kcore", type=int, default=None,
-                        help="k-core value (overrides config default)")
+    parser.add_argument("--kcore", type=int, default=None)
     parser.add_argument("--config", type=str, default="configs/data.yaml")
+    parser.add_argument("--raw-file", type=str, default=None,
+                        help="Path to HotelRec.txt (overrides config)")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
     k = args.kcore or cfg["kcore"]["default"]
-    raw_dir = cfg["dataset"]["raw_dir"]
+    raw_path = args.raw_file or cfg["dataset"]["raw_file"]
     out_dir = cfg["dataset"]["processed_dir"]
 
     print(f"Config: {args.config}")
     print(f"k-core: {k}")
-    print(f"Raw dir: {raw_dir}")
+    print(f"Raw file: {raw_path}")
 
-    # load (streaming from archive or JSON)
-    df = load_raw_data(raw_dir)
+    valid_users, valid_items, stats = compute_kcore_sets(raw_path, k)
 
-    # drop reviews with missing rating
-    df = df[df["rating"] > 0].reset_index(drop=True)
+    stats_path = os.path.join(out_dir, "full_stats.json")
+    os.makedirs(out_dir, exist_ok=True)
+    with open(stats_path, "w") as f:
+        json.dump(stats, f, indent=2)
+    print(f"Saved full-dataset stats to {stats_path}")
 
-    # build initial ID maps
-    _, _, df = build_id_maps(df)
+    df = load_filtered_data(raw_path, valid_users, valid_items)
+    user2id, item2id, df = build_id_maps(df)
 
-    # k-core filtering
-    print(f"\nApplying {k}-core filtering...")
-    df = kcore_filter(df, k)
+    n_users = df["user_id"].nunique()
+    n_items = df["item_id"].nunique()
+    n_inter = len(df)
+    sparsity = 1.0 - n_inter / (n_users * n_items)
+    print(f"\n--- Final {k}-core Statistics ---")
+    print(f"Users:        {n_users:,}")
+    print(f"Items:        {n_items:,}")
+    print(f"Interactions: {n_inter:,}")
+    print(f"Sparsity:     {sparsity:.6f}")
 
-    # remap IDs to contiguous range after filtering
-    user2id, item2id, df = remap_ids(df)
-
-    print_stats(df, f"{k}-core")
-
-    # prepare output columns
-    sub_ratings = cfg.get("sub_ratings", [])
-    keep_cols = ["user_id", "item_id", "rating", "text", "date"] + sub_ratings
+    sub_ratings = ["service", "cleanliness", "location", "value",
+                   "rooms", "sleep_quality", "check_in", "business_service"]
+    keep_cols = ["user_id", "item_id", "rating", "text", "date", "title"] + sub_ratings
     keep_cols = [c for c in keep_cols if c in df.columns]
     df = df[keep_cols]
 
-    # save
     kcore_dir = os.path.join(out_dir, f"{k}core")
     os.makedirs(kcore_dir, exist_ok=True)
 
