@@ -32,56 +32,61 @@ echo ""
 download_full() {
     echo ">>> Downloading HotelRec dataset from SWITCHdrive..."
     echo "    Source: https://drive.switch.ch/index.php/s/n48smsdufhRA7fR"
-    echo "    This is ~10GB. Make sure you have enough disk space."
+    echo "    The archive is ~10GB (zip containing ~365K hotel JSON files)."
+    echo "    No extraction needed — our pipeline streams directly from the zip."
     echo ""
 
-    DEST="${RAW_DIR}/HotelRec.json"
     DOWNLOAD_URL="https://drive.switch.ch/index.php/s/n48smsdufhRA7fR/download"
 
-    if [ -f "$DEST" ]; then
-        SIZE=$(du -h "$DEST" | cut -f1)
-        echo "  File already exists: $DEST ($SIZE)"
+    # Check if we already have the data (zip or extracted JSON files)
+    EXISTING_ZIP=$(ls "${RAW_DIR}"/*.zip 2>/dev/null | head -1)
+    EXISTING_JSON=$(ls "${RAW_DIR}"/*.json 2>/dev/null | head -1)
+
+    if [ -n "$EXISTING_ZIP" ]; then
+        SIZE=$(du -h "$EXISTING_ZIP" | cut -f1)
+        echo "  Archive already exists: $EXISTING_ZIP ($SIZE)"
         echo "  Delete it first if you want to re-download."
-        echo ""
-    else
-        echo "  Downloading to $DEST ..."
-        echo "  (This will take a while — ~10GB file)"
-        echo ""
-
-        # Try wget first (better for large files, supports resume)
-        if command -v wget &> /dev/null; then
-            wget -c -O "$DEST" "$DOWNLOAD_URL" || {
-                echo ""
-                echo "ERROR: wget failed. Try manually:"
-                echo "  wget -O $DEST '$DOWNLOAD_URL'"
-                exit 1
-            }
-        elif command -v curl &> /dev/null; then
-            curl -L -C - -o "$DEST" "$DOWNLOAD_URL" || {
-                echo ""
-                echo "ERROR: curl failed. Try manually:"
-                echo "  curl -L -o $DEST '$DOWNLOAD_URL'"
-                exit 1
-            }
-        else
-            echo "ERROR: Neither wget nor curl found."
-            echo "Download manually from: https://drive.switch.ch/index.php/s/n48smsdufhRA7fR"
-            echo "Save to: $DEST"
-            exit 1
-        fi
+        return 0
     fi
 
-    # If it's a zip/tar, extract it
-    if file "$DEST" 2>/dev/null | grep -q "Zip archive"; then
-        echo "  Extracting zip archive..."
-        unzip -o "$DEST" -d "$RAW_DIR/"
-    elif file "$DEST" 2>/dev/null | grep -q "gzip"; then
-        echo "  Extracting gzip archive..."
-        gunzip -k "$DEST" 2>/dev/null || gzip -dk "$DEST"
+    if [ -n "$EXISTING_JSON" ]; then
+        N_JSON=$(ls "${RAW_DIR}"/*.json 2>/dev/null | wc -l | tr -d ' ')
+        echo "  Found $N_JSON JSON files already in ${RAW_DIR}/"
+        echo "  Looks like data is already extracted. Skipping download."
+        return 0
     fi
 
+    DEST="${RAW_DIR}/HotelRec.zip"
+    echo "  Downloading to $DEST ..."
+    echo "  (This will take a while — ~10GB file)"
     echo ""
-    echo "  Download complete."
+
+    # Try wget first (supports resume with -c)
+    if command -v wget &> /dev/null; then
+        wget -c -O "$DEST" "$DOWNLOAD_URL" || {
+            echo ""
+            echo "ERROR: wget failed. Try manually:"
+            echo "  wget -c -O $DEST '$DOWNLOAD_URL'"
+            exit 1
+        }
+    elif command -v curl &> /dev/null; then
+        curl -L -C - -o "$DEST" "$DOWNLOAD_URL" || {
+            echo ""
+            echo "ERROR: curl failed. Try manually:"
+            echo "  curl -L -C - -o $DEST '$DOWNLOAD_URL'"
+            exit 1
+        }
+    else
+        echo "ERROR: Neither wget nor curl found."
+        echo "Download manually from: https://drive.switch.ch/index.php/s/n48smsdufhRA7fR"
+        echo "Save to: $DEST"
+        exit 1
+    fi
+
+    # Don't extract — preprocess.py and explore_data.py stream from the zip directly.
+    echo ""
+    echo "  Download complete. No extraction needed."
+    echo "  Run 'hpa-explore' to inspect or 'hpa-preprocess' to process."
 }
 
 # ─── Sample: generate synthetic data ─────────────────────────────────
@@ -175,26 +180,27 @@ esac
 # ─── Stats ────────────────────────────────────────────────────────────
 echo ""
 echo "--- Dataset stats ---"
-if [ -f "${RAW_DIR}/HotelRec.json" ]; then
-    SIZE=$(du -h "${RAW_DIR}/HotelRec.json" | cut -f1)
-    echo "  File: HotelRec.json ($SIZE)"
-
-    python3 -c "
-import json
-with open('${RAW_DIR}/HotelRec.json') as f:
-    data = json.load(f)
-users = set(r.get('author', r.get('user_url', '')) for r in data)
-hotels = set(r['hotel_url'] for r in data)
-print(f'  Reviews: {len(data):,}')
-print(f'  Users:   {len(users):,}')
-print(f'  Hotels:  {len(hotels):,}')
-" 2>/dev/null || echo "  (Could not parse — file may still be downloading)"
+ZIP_FILE=$(ls "${RAW_DIR}"/*.zip 2>/dev/null | head -1)
+if [ -n "$ZIP_FILE" ]; then
+    SIZE=$(du -h "$ZIP_FILE" | cut -f1)
+    echo "  Archive: $(basename "$ZIP_FILE") ($SIZE)"
+    # count entries in zip without extracting
+    N_ENTRIES=$(python3 -c "
+import zipfile
+with zipfile.ZipFile('${ZIP_FILE}', 'r') as zf:
+    jsons = [n for n in zf.namelist() if n.endswith('.json')]
+    print(len(jsons))
+" 2>/dev/null || echo "?")
+    echo "  Hotel JSON files inside: ${N_ENTRIES}"
+    echo "  (Run 'hpa-explore' for full review-level stats)"
 else
     N_FILES=$(ls "$RAW_DIR"/*.json 2>/dev/null | wc -l | tr -d ' ')
-    echo "  JSON files: ${N_FILES}"
     if [ "$N_FILES" -gt 0 ]; then
         TOTAL_SIZE=$(du -sh "$RAW_DIR" 2>/dev/null | cut -f1)
+        echo "  JSON files: ${N_FILES}"
         echo "  Total size: ${TOTAL_SIZE}"
+    else
+        echo "  No data files found in ${RAW_DIR}/"
     fi
 fi
 echo "---------------------"

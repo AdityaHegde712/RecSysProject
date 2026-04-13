@@ -1,18 +1,21 @@
 # -*- coding: utf-8 -*-
 """Validate the HotelRec pipeline before submitting HPC jobs.
 
-Tests the GMF model: creation, forward pass, checkpoint save/load,
-ranking metrics, and metrics logging.
+Tests the ItemKNN model: creation, fit on synthetic data, recommend,
+predict, ranking metrics, and metrics logging.
 
 Usage:
     python scripts/validate_pipeline.py
 
-Run this after setup to catch issues before wasting GPU hours.
+Run this after setup to catch issues before wasting compute hours.
 """
 
 import sys
 import os
 import tempfile
+
+import numpy as np
+import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -34,7 +37,6 @@ def step(name, fn):
 # ─── Tests ────────────────────────────────────────────────────────────
 
 def test_core_imports():
-    import torch
     import numpy
     import scipy
     import pandas
@@ -43,43 +45,77 @@ def test_core_imports():
     import tqdm
 
 
-def test_gpu_detection():
-    import torch
-    if torch.cuda.is_available():
-        gpu = torch.cuda.get_device_name(0)
-        props = torch.cuda.get_device_properties(0)
-        mem = getattr(props, 'total_memory', None) or getattr(props, 'total_mem', 0)
-        print(f'         GPU: {gpu} ({mem / 1e9:.1f} GB)')
-    else:
-        print('         No GPU — skipping GPU tests (OK on login node)')
-
-
 def test_model_creation():
     from src.models.common import build_model
 
     num_users, num_items = 100, 50
-    cfg = {'model': {'name': 'gmf', 'embed_dim': 16}}
+    cfg = {'model': {'name': 'itemknn', 'k_neighbors': 10}}
     model = build_model(cfg, num_users, num_items)
-    assert model is not None, 'GMF returned None'
-    n_params = sum(p.numel() for p in model.parameters())
-    print(f'         gmf: {n_params:,} params')
+    assert model is not None, 'ItemKNN returned None'
+    assert model.k == 10, f'expected k=10, got k={model.k}'
+    print(f'         itemknn: k_neighbors={model.k}')
 
 
-def test_gmf_forward():
-    import torch
-    from src.models.common import build_model
+def test_itemknn_fit():
+    from src.models.knn import ItemKNN
 
-    num_users, num_items = 100, 50
-    batch_size = 8
-    user_ids = torch.randint(0, num_users, (batch_size,))
-    item_ids = torch.randint(0, num_items, (batch_size,))
+    num_users, num_items = 50, 30
+    # create synthetic interactions
+    rng = np.random.RandomState(42)
+    n_interactions = 200
+    users = rng.randint(0, num_users, n_interactions)
+    items = rng.randint(0, num_items, n_interactions)
+    df = pd.DataFrame({'user_id': users, 'item_id': items})
 
-    cfg = {'model': {'name': 'gmf', 'embed_dim': 16}}
-    model = build_model(cfg, num_users, num_items)
-    out = model(user_ids, item_ids)
-    assert out.shape == (batch_size,), f'expected ({batch_size},), got {out.shape}'
-    assert out.min() >= 0 and out.max() <= 1, f'output not in [0,1]'
-    print(f'         input ({batch_size},) -> output {out.shape}, range [{out.min():.3f}, {out.max():.3f}]')
+    model = ItemKNN(k_neighbors=10)
+    model.fit(df, num_users, num_items)
+
+    assert model.sim_matrix is not None, 'sim_matrix is None after fit'
+    assert model.interaction_matrix is not None, 'interaction_matrix is None'
+    assert model.sim_matrix.shape == (num_items, num_items)
+    print(f'         sim_matrix: {model.sim_matrix.shape}, nnz={model.sim_matrix.nnz}')
+
+
+def test_itemknn_recommend():
+    from src.models.knn import ItemKNN
+
+    num_users, num_items = 50, 30
+    rng = np.random.RandomState(42)
+    n_interactions = 200
+    users = rng.randint(0, num_users, n_interactions)
+    items = rng.randint(0, num_items, n_interactions)
+    df = pd.DataFrame({'user_id': users, 'item_id': items})
+
+    model = ItemKNN(k_neighbors=10)
+    model.fit(df, num_users, num_items)
+
+    recs = model.recommend(user_id=0, k=5)
+    assert isinstance(recs, list), f'expected list, got {type(recs)}'
+    assert len(recs) <= 5, f'expected <= 5 recs, got {len(recs)}'
+    print(f'         recommend(user=0, k=5) -> {recs}')
+
+
+def test_itemknn_predict():
+    from src.models.knn import ItemKNN
+
+    num_users, num_items = 50, 30
+    rng = np.random.RandomState(42)
+    n_interactions = 200
+    users = rng.randint(0, num_users, n_interactions)
+    items = rng.randint(0, num_items, n_interactions)
+    df = pd.DataFrame({'user_id': users, 'item_id': items})
+
+    model = ItemKNN(k_neighbors=10)
+    model.fit(df, num_users, num_items)
+
+    # scalar predict
+    score = model.predict(0, 5)
+    assert isinstance(score, float), f'expected float, got {type(score)}'
+
+    # batch predict
+    scores = model.predict([0, 1, 2], [5, 10, 15])
+    assert len(scores) == 3, f'expected 3 scores, got {len(scores)}'
+    print(f'         predict(scalar)={score:.4f}, predict(batch)={scores}')
 
 
 def test_ranking_metrics():
@@ -95,22 +131,31 @@ def test_ranking_metrics():
     print(f'         HR@5={hr5:.2f}, NDCG@5={ndcg5:.4f}')
 
 
-def test_checkpoint_roundtrip():
-    import torch
-    from src.models.common import build_model
-    from src.utils.io import save_checkpoint, load_checkpoint
+def test_model_save_load():
+    from src.models.knn import ItemKNN
+    from src.utils.io import save_model, load_model
 
     num_users, num_items = 50, 30
-    cfg = {'model': {'name': 'gmf', 'embed_dim': 8}}
-    model = build_model(cfg, num_users, num_items)
-    optimizer = torch.optim.Adam(model.parameters())
+    rng = np.random.RandomState(42)
+    users = rng.randint(0, num_users, 200)
+    items = rng.randint(0, num_items, 200)
+    df = pd.DataFrame({'user_id': users, 'item_id': items})
 
-    with tempfile.NamedTemporaryFile(suffix='.pt', delete=True) as f:
-        save_checkpoint(model, optimizer, epoch=5, path=f.name)
-        loaded_model, epoch = load_checkpoint(f.name, model)
-        assert epoch == 5, f'expected epoch 5, got {epoch}'
-        assert loaded_model is not None
-    print(f'         save + load: epoch={epoch}')
+    model = ItemKNN(k_neighbors=10)
+    model.fit(df, num_users, num_items)
+
+    with tempfile.NamedTemporaryFile(suffix='.pkl', delete=True) as f:
+        save_model(model, f.name)
+        loaded = load_model(f.name)
+        assert loaded.k == 10, f'expected k=10, got k={loaded.k}'
+        assert loaded.num_users == num_users
+        assert loaded.num_items == num_items
+
+        # check that predictions match
+        orig_score = model.predict(0, 5)
+        loaded_score = loaded.predict(0, 5)
+        assert abs(orig_score - loaded_score) < 1e-6
+    print(f'         save + load: k={loaded.k}, predictions match')
 
 
 def test_metrics_logger():
@@ -118,20 +163,19 @@ def test_metrics_logger():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         logger = MetricsLogger(tmpdir, filename='test_metrics.csv')
-        logger.log(1, {'loss': 0.5, 'HR@10': 0.3})
-        logger.log(2, {'loss': 0.4, 'HR@10': 0.4})
+        logger.log(1, {'HR@10': 0.3, 'fit_time_s': 5.2})
+        logger.log(2, {'HR@10': 0.4, 'fit_time_s': 5.1})
 
         df = logger.load()
         assert len(df) == 2, f'expected 2 rows, got {len(df)}'
         assert df.iloc[0]['epoch'] == 1
-        assert df.iloc[1]['loss'] == 0.4
     print(f'         write 2 rows, read back OK')
 
 
 def test_config_loading():
     from src.utils.io import load_config
 
-    cfg_path = 'configs/gmf.yaml'
+    cfg_path = 'configs/itemknn.yaml'
     if os.path.exists(cfg_path):
         cfg = load_config(cfg_path)
         assert 'model' in cfg, f'{cfg_path}: missing "model" key'
@@ -142,27 +186,30 @@ def test_config_loading():
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("HotelRec — Pipeline Validation (GMF)")
+    print("HotelRec — Pipeline Validation (ItemKNN)")
     print("=" * 60)
     print()
 
     print("--- Core imports ---")
-    step("import torch, numpy, scipy, pandas, sklearn, yaml, tqdm", test_core_imports)
-
-    print("\n--- GPU detection ---")
-    step("CUDA availability", test_gpu_detection)
+    step("import numpy, scipy, pandas, sklearn, yaml, tqdm", test_core_imports)
 
     print("\n--- Model creation ---")
-    step("create GMF model", test_model_creation)
+    step("create ItemKNN model", test_model_creation)
 
-    print("\n--- GMF forward pass ---")
-    step("GMF forward", test_gmf_forward)
+    print("\n--- ItemKNN fit ---")
+    step("fit on synthetic data", test_itemknn_fit)
+
+    print("\n--- ItemKNN recommend ---")
+    step("recommend top-k items", test_itemknn_recommend)
+
+    print("\n--- ItemKNN predict ---")
+    step("predict scores", test_itemknn_predict)
 
     print("\n--- Ranking metrics ---")
     step("HR + NDCG", test_ranking_metrics)
 
-    print("\n--- Checkpoint save/load ---")
-    step("save and load GMF checkpoint", test_checkpoint_roundtrip)
+    print("\n--- Model save/load ---")
+    step("save and load ItemKNN via pickle", test_model_save_load)
 
     print("\n--- MetricsLogger ---")
     step("write + read CSV log", test_metrics_logger)
@@ -177,4 +224,4 @@ if __name__ == '__main__':
         sys.exit(1)
     else:
         print("\nAll pipeline checks passed! Ready to train:")
-        print("  sbatch scripts/run_hpc.sh")
+        print("  python -m src.train --config configs/itemknn.yaml --kcore 20")

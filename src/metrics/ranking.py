@@ -1,8 +1,9 @@
 import math
 
 import numpy as np
-import torch
 from tqdm import tqdm
+
+from src.data.dataset import load_split, get_user_positive_items
 
 
 def hit_ratio(ranked_list, ground_truth, k: int) -> float:
@@ -21,58 +22,65 @@ def ndcg(ranked_list, ground_truth, k: int) -> float:
 
 def evaluate_ranking(
     model,
-    test_loader,
+    kcore_dir: str,
+    split: str = "test",
     k_values: list[int] = None,
-    device: str = "cpu",
+    num_negatives: int = 99,
+    seed: int = 42,
 ) -> dict[str, float]:
     """
-    Full leave-one-out evaluation.
+    Leave-one-out evaluation for ItemKNN.
 
-    Expects test_loader to yield (user, items, labels) batches from
-    EvalInteractionDataset — items[:,0] is the positive, rest are negatives.
+    For each user in the split, takes their positive item and samples
+    num_negatives random items the user hasn't interacted with. Scores
+    all candidates and computes HR@k and NDCG@k.
 
-    Returns dict like {'HR@5': 0.32, 'NDCG@5': 0.18, ...}.
+    Args:
+        model: fitted ItemKNN model
+        kcore_dir: path to the k-core processed directory
+        split: which split to evaluate ('val' or 'test')
+        k_values: list of k values for HR@k and NDCG@k
+        num_negatives: number of negative samples per positive
+        seed: random seed for negative sampling
     """
     if k_values is None:
         k_values = [5, 10, 20]
 
+    # load the split and user positive items
+    eval_df = load_split(kcore_dir, split)
+    user_pos_all = get_user_positive_items(kcore_dir)
+
+    rng = np.random.RandomState(seed)
+    n_items = model.num_items
+
     metrics = {f"{m}@{k}": [] for k in k_values for m in ("HR", "NDCG")}
 
-    model_is_neural = hasattr(model, "parameters")
-    if model_is_neural:
-        model.eval()
+    for _, row in tqdm(eval_df.iterrows(), total=len(eval_df),
+                       desc=f"eval ({split})", leave=False):
+        u = int(row["user_id"])
+        pos_item = int(row["item_id"])
+        pos_set = user_pos_all.get(u, set())
 
-    with torch.no_grad():
-        for users, items, labels in tqdm(test_loader, desc="eval", leave=False):
-            # users: (B,), items: (B, 1+num_neg), labels: (B, 1+num_neg)
-            batch_size = users.size(0)
-            num_candidates = items.size(1)
+        # sample negatives
+        negs = []
+        while len(negs) < num_negatives:
+            j = rng.randint(0, n_items)
+            if j not in pos_set and j != pos_item:
+                negs.append(j)
 
-            if model_is_neural:
-                # flatten for model forward pass
-                u_flat = users.unsqueeze(1).expand(-1, num_candidates).reshape(-1).to(device)
-                i_flat = items.reshape(-1).to(device)
-                scores = model(u_flat, i_flat).reshape(batch_size, num_candidates)
-            else:
-                # non-neural: call predict per-element (slow but correct)
-                scores_list = []
-                for b in range(batch_size):
-                    u = users[b].item()
-                    row_scores = []
-                    for c in range(num_candidates):
-                        row_scores.append(model.predict(u, items[b, c].item()))
-                    scores_list.append(row_scores)
-                scores = torch.tensor(scores_list)
+        # score all candidates: positive first, then negatives
+        candidates = [pos_item] + negs
+        scores = model.predict(
+            [u] * len(candidates),
+            candidates,
+        )
 
-            # rank items by descending score
-            _, indices = torch.sort(scores, dim=1, descending=True)
+        # rank by descending score
+        ranked_indices = np.argsort(scores)[::-1]
+        ranked_items = [candidates[i] for i in ranked_indices]
 
-            for b in range(batch_size):
-                ranked = items[b][indices[b]].tolist()
-                gt_item = items[b, 0].item()  # positive is always at index 0
-
-                for k in k_values:
-                    metrics[f"HR@{k}"].append(hit_ratio(ranked, gt_item, k))
-                    metrics[f"NDCG@{k}"].append(ndcg(ranked, gt_item, k))
+        for k in k_values:
+            metrics[f"HR@{k}"].append(hit_ratio(ranked_items, pos_item, k))
+            metrics[f"NDCG@{k}"].append(ndcg(ranked_items, pos_item, k))
 
     return {key: float(np.mean(vals)) for key, vals in metrics.items()}

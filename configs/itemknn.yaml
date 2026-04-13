@@ -1,0 +1,14 @@
+# Item-based K-Nearest Neighbors (Sarwar et al., 2001)
+
+model:
+  name: itemknn
+  k_neighbors: 50
+  similarity: cosine
+
+evaluation:
+  top_k: [5, 10, 20]
+  num_negatives: 99
+  metrics: [hr, ndcg]
+
+checkpoint_dir: results/itemknn
+log_dir: results/logs/itemknn

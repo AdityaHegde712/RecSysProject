@@ -29,11 +29,8 @@ data/processed/{kcore}/
       │
       ▼
   dataset.py
-  ├─ InteractionDataset  → (user_id, pos_item, neg_item) with negative sampling
-  └─ EvalInteractionDataset → (user_id, item_list, labels) for ranking eval
-      │
-      ▼
-  DataLoader (batch_size from config, shuffle for train)
+  ├─ load_split()  → DataFrame for any split
+  └─ get_user_positive_items()  → user → set of items (for negative sampling)
 ```
 
 ### k-core Filtering
@@ -61,25 +58,52 @@ while True:
 
 ---
 
-## GMF Architecture
+## ItemKNN Architecture
 
-GMF (Generalized Matrix Factorization) is the simplest model in the NCF framework from He et al. (2017). It takes the element-wise product of user and item embeddings, then passes the result through a linear layer and sigmoid.
+ItemKNN (Sarwar et al., 2001) is a standard item-based collaborative filtering method. It doesn't learn parameters — it computes item-item similarity from the interaction matrix and uses that to score candidates.
 
 ```
-user_id ──► Embedding(num_users, d) ──► u  (d,)
-                                            │
-                                            ├─ element-wise multiply ──► h  (d,)
-                                            │                              │
-item_id ──► Embedding(num_items, d) ──► i  (d,)                     Linear(d, 1)
-                                                                           │
-                                                                       Sigmoid
-                                                                           │
-                                                                     score ∈ (0,1)
+train.parquet
+      │
+      ▼
+  Build sparse interaction matrix  (num_users × num_items, binary)
+      │
+      ▼
+  Compute item-item cosine similarity  (num_items × num_items)
+      │
+      ▼
+  Keep only top-k neighbors per item  (sparsify for efficiency)
+      │
+      ▼
+  sim_matrix  (sparse, num_items × num_items)
 ```
 
-This is essentially matrix factorization with a learned (non-uniform) kernel instead of a plain dot product. The linear layer lets the model weight different latent dimensions differently, which gives it more expressiveness than a standard dot product.
+### Recommendation
 
-Embeddings are initialized with `N(0, 0.01)` and the output layer uses Xavier uniform initialization.
+To recommend items for a user:
+
+```
+user_history = interaction_matrix[user_id]   # sparse row, items they've seen
+scores = sim_matrix.T @ user_history.T       # sum of similarities to history
+scores[seen_items] = -inf                    # exclude already-seen items
+top_k = argsort(scores, descending)[:k]      # return top-k item IDs
+```
+
+Each candidate item's score is the sum of its cosine similarities to all items the user has interacted with. Items more similar to the user's history get higher scores.
+
+### Prediction
+
+To predict a score for a specific (user, item) pair:
+
+```
+score = sum(sim_matrix[item, j] for j in user_history)
+```
+
+This is the same as the recommendation scoring, but for a single item.
+
+### Why Top-k Neighbors?
+
+The full similarity matrix is (num_items × num_items), which for the 20-core subset is ~39K × 39K = 1.5 billion entries. Most of these are near-zero. Keeping only the top-k (default 50) most similar items per item reduces memory by ~99.9% with minimal impact on recommendation quality.
 
 ---
 
@@ -89,39 +113,32 @@ Embeddings are initialized with `N(0, 0.01)` and the output layer uses Xavier un
 Config (YAML)
       │
       ▼
-  train.py --config configs/gmf.yaml --kcore <k>
+  train.py --config configs/itemknn.yaml --kcore <k>
       │
       ├─ load_config()
       ├─ set_seed(42)
-      ├─ build DataLoaders (streaming from parquet)
+      ├─ load training DataFrame from parquet
       │
-      └─ build_model() → move to GPU
+      └─ build_model() → ItemKNN
             │
-            for each epoch:
-              train_one_epoch():
-                for batch in train_loader:
-                  sample negatives
-                  forward → BPR loss → backward → Adam step
-              │
-              validate():
-                for batch in val_loader:
-                  forward → compute HR@k, NDCG@k
-              │
-              save checkpoint (best + last)
-              log metrics to CSV
+            model.fit(train_df, num_users, num_items)
+              ├─ build sparse interaction matrix
+              ├─ compute item-item cosine similarity (batched)
+              └─ sparsify to top-k neighbors
+            │
+            save model via pickle
+            │
+            evaluate on validation set
+              ├─ for each val user: sample 99 negatives
+              ├─ score all 100 candidates
+              └─ compute HR@k, NDCG@k
 ```
 
-### Loss Function
+ItemKNN has no training loop — it fits in a single pass. No optimizer, no loss function, no epochs. The "training" step is just building the similarity matrix, which takes a few minutes on CPU.
 
-We use BPR (Bayesian Personalized Ranking) pairwise loss — the model should score positive items higher than negative items:
+### Negative Sampling (Evaluation Only)
 
-```
-loss = -mean(log(sigmoid(pos_score - neg_score)))
-```
-
-### Negative Sampling
-
-During training, for each positive (user, item) pair, we sample 4 random items the user hasn't interacted with. During evaluation, we sample 99 negatives per positive — this is the standard NCF evaluation protocol.
+During evaluation, for each test/val user, we sample 99 random items the user hasn't interacted with. We score all 100 candidates (1 positive + 99 negatives) and rank them. This is the standard protocol from He et al. (2017) and matches the HotelRec paper.
 
 ---
 
@@ -166,14 +183,15 @@ HR@k tells you "did we retrieve the right item?" NDCG@k also cares about *where*
                                                            │
                                                            ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│  GPU Node (no internet, has GPU + 32GB RAM)                      │
+│  Compute Node (no internet, has CPU + RAM)                       │
 │                                                                  │
 │  SLURM activates venv, then runs:                                │
 │  1. Preprocess: k-core filter → parquet splits                   │
-│  2. Train GMF with BPR loss (20 epochs, cosine LR)               │
+│  2. Fit ItemKNN (build similarity matrix, ~5 min)                │
 │  3. Evaluate: HR@k, NDCG@k on test set                          │
-│  4. Save results to results/ and logs to logs/                   │
+│  4. Save results to results/ and logs to results/logs/           │
 │                                                                  │
+│  Note: ItemKNN doesn't need GPU — runs entirely on CPU.          │
 │  Email notification on completion/failure                         │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -186,19 +204,19 @@ HR@k tells you "did we retrieve the right item?" NDCG@k also cares about *where*
 |------|-------------|
 | `src/data/preprocess.py` | Raw JSON → parquet with k-core filtering and ID mapping |
 | `src/data/split.py` | Train/val/test splitting (80/10/10, seed=42) |
-| `src/data/dataset.py` | PyTorch Datasets (InteractionDataset, EvalInteractionDataset), DataLoader factory |
-| `src/models/gmf.py` | Generalized Matrix Factorization |
+| `src/data/dataset.py` | Load splits from parquet, build user-positive-items mapping |
+| `src/models/knn.py` | ItemKNN: item-based collaborative filtering with cosine similarity |
 | `src/models/common.py` | `build_model()` factory |
-| `src/metrics/ranking.py` | HR@k, NDCG@k computation |
-| `src/train.py` | Training entry point (BPR loss, cosine scheduler, early stopping) |
-| `src/evaluate.py` | Evaluation entry point (load checkpoint, compute ranking metrics) |
-| `src/utils/io.py` | Config loading, checkpoint save/load |
+| `src/metrics/ranking.py` | HR@k, NDCG@k computation with leave-one-out protocol |
+| `src/train.py` | Training entry point (fit ItemKNN, save via pickle, evaluate) |
+| `src/evaluate.py` | Evaluation entry point (load model, compute ranking metrics) |
+| `src/utils/io.py` | Config loading, pickle save/load for models |
 | `src/utils/seed.py` | `set_seed()` for reproducibility |
 | `src/utils/metrics_logger.py` | CSV metrics logging |
 | `scripts/run_hpc.sh` | SLURM job script (setup + experiment phases) |
 | `scripts/hpc_aliases.sh` | Shell aliases for common HPC commands |
 | `scripts/download_data.sh` | Download HotelRec data from source |
-| `scripts/verify_env.py` | Check Python version, packages, GPU availability |
+| `scripts/verify_env.py` | Check Python version, packages |
 | `scripts/validate_pipeline.py` | Dry-run pipeline validation |
 | `configs/data.yaml` | Dataset paths, k-core values, split ratios |
-| `configs/gmf.yaml` | GMF model config (embedding dim, lr, epochs, negative sampling) |
+| `configs/itemknn.yaml` | ItemKNN model config (k_neighbors, similarity, evaluation) |

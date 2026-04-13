@@ -181,14 +181,10 @@ def explore(data_dir: str, sample_size: int = 0):
 
     if source_type is None:
         print(f"No data found in {data_dir}")
-        print("Downloading sample dataset...")
-        import subprocess
-        script = Path(__file__).parent / "download_data.sh"
-        subprocess.run(["bash", str(script), "sample"], check=True)
-        source_type, source = find_data_source(data_dir)
-        if source_type is None:
-            print(f"ERROR: Still no data. Check scripts/download_data.sh")
-            sys.exit(1)
+        print("Download the dataset first:")
+        print("  bash scripts/download_data.sh full     # full dataset (~10GB)")
+        print("  bash scripts/download_data.sh sample   # synthetic sample for testing")
+        sys.exit(1)
 
     if source_type == "archive":
         print(f"Found archive: {source.name} ({source.stat().st_size / 1e9:.1f} GB)")
@@ -237,48 +233,48 @@ def explore(data_dir: str, sample_size: int = 0):
         if total_reviews % 1_000_000 == 0:
             print(f"    {total_reviews:,} reviews processed...")
 
-            # User / item identifiers
-            user = rec.get("author") or rec.get("user_url") or rec.get("user_id", "")
-            item = rec.get("hotel_url") or rec.get("item_id", "")
-            if user:
-                users.add(user)
-                user_review_counts[user] += 1
-            if item:
-                items.add(item)
-                item_review_counts[item] += 1
+        # User / item identifiers
+        user = rec.get("author") or rec.get("user_url") or rec.get("user_id", "")
+        item = rec.get("hotel_url") or rec.get("item_id", "")
+        if user:
+            users.add(user)
+            user_review_counts[user] += 1
+        if item:
+            items.add(item)
+            item_review_counts[item] += 1
 
-            # Overall rating
-            rating = rec.get("rating") or rec.get("overall_rating")
-            if rating is not None:
+        # Overall rating
+        rating = rec.get("rating") or rec.get("overall_rating")
+        if rating is not None:
+            try:
+                ratings.append(float(rating))
+            except (ValueError, TypeError):
+                pass
+
+        # Review text length
+        text = rec.get("text", "")
+        if text:
+            word_count = len(text.split())
+            review_lengths.append(word_count)
+
+        # Date
+        date_val = rec.get("date", "")
+        if date_val:
+            dates.append(str(date_val))
+
+        # Sub-ratings — could be in property_dict or top-level
+        prop = rec.get("property_dict", {}) or {}
+        for key in SUB_RATING_KEYS:
+            # Check property_dict first, then top-level (with underscore variant)
+            val = prop.get(key) or prop.get(key.replace("-", " "))
+            if val is None:
+                val = rec.get(key) or rec.get(key.replace(" ", "_"))
+            if val is not None:
+                sub_rating_counts[key] += 1
                 try:
-                    ratings.append(float(rating))
+                    sub_rating_values[key].append(float(val))
                 except (ValueError, TypeError):
                     pass
-
-            # Review text length
-            text = rec.get("text", "")
-            if text:
-                word_count = len(text.split())
-                review_lengths.append(word_count)
-
-            # Date
-            date_val = rec.get("date", "")
-            if date_val:
-                dates.append(str(date_val))
-
-            # Sub-ratings — could be in property_dict or top-level
-            prop = rec.get("property_dict", {}) or {}
-            for key in SUB_RATING_KEYS:
-                # Check property_dict first, then top-level (with underscore variant)
-                val = prop.get(key) or prop.get(key.replace("-", " "))
-                if val is None:
-                    val = rec.get(key) or rec.get(key.replace(" ", "_"))
-                if val is not None:
-                    sub_rating_counts[key] += 1
-                    try:
-                        sub_rating_values[key].append(float(val))
-                    except (ValueError, TypeError):
-                        pass
 
     # ── compute stats ────────────────────────────────────────────────────
 

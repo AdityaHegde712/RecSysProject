@@ -1,6 +1,6 @@
-# Experiment Guide — HotelRec GMF Baseline
+# Experiment Guide — HotelRec ItemKNN Baseline
 
-Step-by-step instructions for reproducing the GMF baseline results from Antognini & Faltings (LREC 2020). The experiment has three phases: data preparation, training, and evaluation.
+Step-by-step instructions for reproducing the ItemKNN baseline results from Antognini & Faltings (LREC 2020). The experiment has three phases: data preparation, fitting, and evaluation.
 
 ---
 
@@ -68,30 +68,30 @@ You should see roughly 1.78M / 222K / 222K rows for 20-core.
 
 ---
 
-## Phase 2: Train GMF
+## Phase 2: Fit ItemKNN
 
 ```bash
 # 20-core
-python -m src.train --config configs/gmf.yaml --kcore 20
+python -m src.train --config configs/itemknn.yaml --kcore 20
 
 # 5-core
-python -m src.train --config configs/gmf.yaml --kcore 5
+python -m src.train --config configs/itemknn.yaml --kcore 5
 ```
 
-This trains GMF with BPR loss for 20 epochs using a cosine learning rate schedule. The model checkpoints the best weights (by HR@10 on the validation set) and the final weights.
+This fits ItemKNN by building the item-item cosine similarity matrix from the training interactions. No GPU needed — runs entirely on CPU. The model is saved via pickle and validation metrics are computed immediately after fitting.
 
-**Timing estimates (20-core, single GPU):**
+**Timing estimates (20-core, CPU):**
 
-| Model | Epochs | Time per Epoch | Total |
-|-------|--------|---------------|-------|
-| GMF | 20 | ~3 min | ~1 hour |
+| Model | What It Does | Time |
+|-------|-------------|------|
+| ItemKNN | Build similarity matrix + evaluate | ~5–10 min |
 
 ### Run on HPC
 
 If you're on the SJSU HPC, the SLURM script handles everything:
 
 ```bash
-# Full pipeline: preprocess → train → eval
+# Full pipeline: preprocess → fit → eval
 sbatch scripts/run_hpc.sh
 
 # Or individual phases:
@@ -105,27 +105,27 @@ sbatch scripts/run_hpc.sh eval
 ## Phase 3: Evaluate
 
 ```bash
-python -m src.evaluate --config configs/gmf.yaml --kcore 20
-python -m src.evaluate --config configs/gmf.yaml --kcore 5
+python -m src.evaluate --config configs/itemknn.yaml --kcore 20
+python -m src.evaluate --config configs/itemknn.yaml --kcore 5
 ```
 
-This loads the best checkpoint and runs the leave-one-out evaluation protocol (1 positive + 99 negatives per test user).
+This loads the fitted ItemKNN model from pickle and runs the leave-one-out evaluation protocol (1 positive + 99 negatives per test user).
 
-### Expected Results (Paper Table 5 — GMF row)
+### Expected Results (Paper Table 5 — ItemKNN row)
 
 **20-core:**
 
 | Model | HR@5 | HR@10 | HR@20 | NDCG@5 | NDCG@10 | NDCG@20 |
 |-------|------|-------|-------|--------|---------|---------|
-| GMF | 0.3705 | 0.5219 | 0.6913 | 0.2565 | 0.3047 | 0.3477 |
+| ItemKNN | 0.0236 | 0.0411 | 0.0682 | 0.0061 | 0.0084 | 0.0110 |
 
 **5-core:**
 
 | Model | HR@5 | HR@10 | HR@20 | NDCG@5 | NDCG@10 | NDCG@20 |
 |-------|------|-------|-------|--------|---------|---------|
-| GMF | 0.3899 | 0.5340 | 0.7055 | 0.2761 | 0.3237 | 0.3666 |
+| ItemKNN | 0.0162 | 0.0238 | 0.0340 | 0.0072 | 0.0088 | 0.0103 |
 
-Small differences (±5%) from the paper are expected due to different random seeds for negative sampling and minor implementation differences.
+Small differences (±10%) from the paper are expected due to different random seeds for negative sampling and minor implementation differences.
 
 ---
 
@@ -136,40 +136,40 @@ Small differences (±5%) from the paper are expected due to different random see
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | `MemoryError` during preprocessing | 5-core has 21M rows | Use `--kcore 20` first, or increase `--mem` in SLURM |
-| `CUDA out of memory` during training | Batch size too large for GPU | Reduce `batch_size` in `configs/gmf.yaml` (try 128 or 64) |
+| `MemoryError` during similarity computation | Item-item matrix too large | Reduce `k_neighbors` in config, or use 20-core subset |
 | `Killed` (no error message) | OS OOM killer | Request more RAM: `sbatch --mem=64G scripts/run_hpc.sh` |
 
-### Slow Training
+### Slow Fitting
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Training is very slow | No GPU detected | Check `hpa-verify` — make sure CUDA is available |
-| Data loading is the bottleneck | Parquet reads are slow | Make sure data is on local SSD, not NFS |
+| Similarity computation is slow | Large item catalog | Expected for 5-core (312K items). Use 20-core for development. |
+| Data loading is slow | Parquet reads are slow | Make sure data is on local SSD, not NFS |
 
 ### HPC Issues
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `ModuleNotFoundError: No module named 'torch'` | venv not activated | Run `hpa-setup` first, then `source scripts/hpc_aliases.sh` |
-| Job stuck in `PENDING` | No GPU nodes available | Check `squeue -p gpu` — wait or try off-peak hours |
+| `ModuleNotFoundError: No module named 'sklearn'` | venv not activated | Run `hpa-setup` first, then `source scripts/hpc_aliases.sh` |
+| Job stuck in `PENDING` | No nodes available | Check `squeue` — wait or try off-peak hours |
 | `SyntaxError: invalid syntax` | Using system Python 2.7 | Activate venv: `source venv/bin/activate` |
 
 ---
 
 ## How to Add a New Model
 
-1. **Create the model file** in `src/models/`. Follow the pattern in [`gmf.py`](../src/models/gmf.py) — your model needs `__init__` and `forward(user_ids, item_ids) → scores`.
+1. **Create the model file** in `src/models/`. Your model needs `fit(train_df, num_users, num_items)`, `recommend(user_id, k)`, and `predict(user_ids, item_ids)` methods.
 
 2. **Register it** in [`src/models/common.py`](../src/models/common.py) — add a case to `build_model()` so the training script can instantiate it by name.
 
-3. **Add a config** (optional) — create a new YAML in `configs/` or add your model's params to the existing config.
+3. **Add a config** — create a new YAML in `configs/` with your model's parameters.
 
 4. **Run it**:
    ```bash
    python -m src.train --config configs/your_config.yaml --kcore 20
    ```
 
-5. **Evaluate** — the evaluation pipeline works with any model that follows the same checkpoint format.
+5. **Evaluate** — the evaluation pipeline works with any model that follows the same interface and can be pickled.
 
 ---
 
@@ -180,6 +180,6 @@ Use this to track progress:
 - [ ] Download HotelRec data
 - [ ] Preprocess 20-core subset
 - [ ] Preprocess 5-core subset
-- [ ] GMF (20-core) — HR/NDCG
-- [ ] GMF (5-core) — HR/NDCG
+- [ ] ItemKNN (20-core) — HR/NDCG
+- [ ] ItemKNN (5-core) — HR/NDCG
 - [ ] Compare with paper Table 5

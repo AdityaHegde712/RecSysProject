@@ -35,38 +35,18 @@ def check(name, import_path=None, version_attr='__version__'):
         FAIL += 1
 
 
-def check_torch_cuda():
-    """Check PyTorch CUDA availability."""
-    global PASS, FAIL
+def check_optional(name, import_path=None, version_attr='__version__'):
+    """Check an optional dependency — warn but don't fail."""
+    global PASS
+    mod_name = import_path or name
     try:
-        import torch
-        if torch.cuda.is_available():
-            gpu = torch.cuda.get_device_name(0)
-            props = torch.cuda.get_device_properties(0)
-            mem = getattr(props, 'total_memory', None) or getattr(props, 'total_mem', 0)
-            print(f"  OK   {'torch.cuda':<30s} GPU: {gpu} ({mem / 1e9:.1f} GB)")
-        else:
-            print(f"  WARN {'torch.cuda':<30s} No GPU (OK on login node, needed on GPU node)")
+        mod = importlib.import_module(mod_name)
+        ver = getattr(mod, version_attr, '?') if version_attr else '?'
+        print(f"  OK   {name:<30s} {ver}")
         PASS += 1
-    except Exception as e:
-        print(f"  FAIL {'torch.cuda':<30s} {e}")
-        FAIL += 1
-
-
-def check_torch_forward():
-    """Check that a simple forward pass works."""
-    global PASS, FAIL
-    try:
-        import torch
-        x = torch.randn(4, 32)
-        linear = torch.nn.Linear(32, 1)
-        y = linear(x)
-        assert y.shape == (4, 1)
-        print(f"  OK   {'torch forward pass':<30s} Linear works")
-        PASS += 1
-    except Exception as e:
-        print(f"  FAIL {'torch forward pass':<30s} {e}")
-        FAIL += 1
+    except Exception:
+        print(f"  WARN {name:<30s} not installed (optional — needed for neural variants)")
+        PASS += 1  # don't count as failure
 
 
 def check_src_imports():
@@ -76,7 +56,7 @@ def check_src_imports():
         'src',
         'src.models',
         'src.models.common',
-        'src.models.gmf',
+        'src.models.knn',
         'src.data.dataset',
         'src.data.preprocess',
         'src.data.split',
@@ -120,20 +100,18 @@ if __name__ == '__main__':
     print(f"\nPython: {sys.version}")
     print(f"Path:   {sys.executable}\n")
 
-    print("--- Core dependencies ---")
-    check('torch')
+    print("--- Core dependencies (required) ---")
     check('numpy')
     check('scipy')
     check('pandas')
     check('scikit-learn', import_path='sklearn', version_attr='__version__')
-    check('matplotlib')
     check('pyyaml', import_path='yaml', version_attr='__version__')
     check('tqdm')
-    check('Pillow', import_path='PIL', version_attr='__version__')
 
-    print("\n--- PyTorch backend ---")
-    check_torch_cuda()
-    check_torch_forward()
+    print("\n--- Optional dependencies ---")
+    check_optional('torch')
+    check_optional('matplotlib')
+    check_optional('Pillow', import_path='PIL', version_attr='__version__')
 
     print("\n--- Project imports ---")
     check_src_imports()
@@ -151,5 +129,5 @@ if __name__ == '__main__':
         sys.exit(1)
     else:
         print("\nAll checks passed! Ready to submit:")
-        print("  sbatch scripts/run_hpc.sh")
+        print("  python -m src.train --config configs/itemknn.yaml --kcore 20")
     print("=" * 60)

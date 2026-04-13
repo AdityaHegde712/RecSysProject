@@ -69,7 +69,7 @@ The pipeline produces the following files under `data/processed/{k}core/`:
 
 - **`train.parquet`**, **`val.parquet`**, **`test.parquet`** — 80/10/10 random split of `interactions.parquet`, produced by `src/data/split.py` with `seed=42`.
 
-For the recommendation task, the `InteractionDataset` class in `src/data/dataset.py` consumes these splits and produces `(user_id, positive_item_id, negative_item_id)` triplets with on-the-fly negative sampling during training. For evaluation, `EvalInteractionDataset` pairs each test positive with 99 sampled negatives.
+For the recommendation task, `src/data/dataset.py` provides `load_split()` to load any split as a DataFrame, and `get_user_positive_items()` to build the user→items mapping needed for negative sampling during evaluation.
 
 ---
 
@@ -77,17 +77,17 @@ For the recommendation task, the `InteractionDataset` class in `src/data/dataset
 
 | Baseline method | Library / implementation | Key results (20-core) |
 |----------------|------------------------|----------------------|
-| GMF (He et al., 2017) | PyTorch (custom, `src/models/gmf.py`) | HR@10 = 0.5219, NDCG@10 = 0.3047 (paper-reported) |
+| ItemKNN (Sarwar et al., 2001) | scikit-learn + scipy (custom, `src/models/knn.py`) | HR@10 = 0.0411, NDCG@10 = 0.0084 (paper-reported) |
 
 **Notable observations:**
 
-- GMF is a middle-ground model in the NCF family. It's significantly better than traditional CF approaches (the paper reports ItemKNN at HR@10 = 0.0411, which is basically useless) but leaves clear room for improvement compared to NeuMF (HR@10 = 0.5776).
+- ItemKNN is intentionally a weak baseline. The paper reports it at HR@10 = 0.0411 on 20-core, which is barely above random. This is expected — with 99.92% sparsity, most item pairs share almost no users, so cosine similarity is nearly all zeros.
 
-- The ~21% relative gap between GMF and NeuMF on HR@10 tells us that adding an MLP path or attention mechanism on top of the element-wise product should yield meaningful gains. This is exactly the space our three variants will explore.
+- The massive gap between ItemKNN (HR@10 = 0.0411) and neural methods like GMF (HR@10 = 0.5219) and NeuMF (HR@10 = 0.5776) demonstrates exactly why neural approaches are needed for this domain. Neural models learn dense embeddings that capture indirect relationships, which is critical when direct user-item overlap is rare.
 
-- We chose GMF as our shared baseline because (a) it's neural, so it uses the same training infrastructure (PyTorch, negative sampling, BPR loss) that our variants will build on, and (b) it's simple enough that we can be confident in our implementation — there's less room for bugs to hide compared to a multi-component model.
+- We chose ItemKNN as our shared baseline because (a) it's the simplest possible collaborative filtering method — no hyperparameters to tune beyond k_neighbors, no training loop, no GPU needed, and (b) it sets a clear lower bound that all three of our neural variants should easily beat, making the improvement story straightforward.
 
-- We haven't yet reproduced these exact numbers on the full 20-core subset (training takes ~2h on a single GPU), but the pipeline is end-to-end runnable and we've validated the architecture against the paper's description. We expect our numbers to be within a small margin of the reported values.
+- ItemKNN fits in minutes on CPU. No GPU allocation needed, no training epochs, no learning rate tuning. This makes it easy to validate the pipeline end-to-end before investing compute time in neural models.
 
 ---
 
@@ -124,8 +124,8 @@ We report at k = 5, 10, and 20 to match the paper and to see how performance deg
 
 | Member | Planned variant direction | Why this approach fits the dataset |
 |--------|--------------------------|-----------------------------------|
-| Aditya Hegde | NeuMF with attention-weighted sub-ratings | HotelRec has rich sub-rating metadata (Service, Location, Cleanliness, etc.) that GMF completely ignores. By feeding sub-ratings through an attention layer, the model can learn which aspects matter most to each user — e.g., a business traveler might weight Location and Check-In heavily while a family might care more about Rooms and Cleanliness. |
-| Pramod Yadav | Review-text-enhanced NCF using sentence embeddings | About 71% of reviews have meaningful text averaging 125 words. Encoding review semantics with a pretrained sentence-transformer and fusing those embeddings with the GMF user/item representations could capture nuanced preferences that aren't visible in ratings alone — like whether a user cares about "quiet rooms" or "friendly staff." |
+| Aditya Hegde | NeuMF with attention-weighted sub-ratings | HotelRec has rich sub-rating metadata (Service, Location, Cleanliness, etc.) that ItemKNN completely ignores. By feeding sub-ratings through an attention layer, the model can learn which aspects matter most to each user — e.g., a business traveler might weight Location and Check-In heavily while a family might care more about Rooms and Cleanliness. |
+| Pramod Yadav | Review-text-enhanced NCF using sentence embeddings | About 71% of reviews have meaningful text averaging 125 words. Encoding review semantics with a pretrained sentence-transformer and fusing those embeddings with user/item representations could capture nuanced preferences that aren't visible in ratings alone — like whether a user cares about "quiet rooms" or "friendly staff." |
 | Hriday Ampavatina | Temporal-aware recommendation with time decay | The dataset spans 2001–2019. User preferences evolve over time — a hotel someone reviewed in 2010 may not reflect their current taste. Adding time-decay weighting or positional encoding to the interaction history could help the model focus on more recent preferences and improve relevance. |
 
 ---
@@ -134,12 +134,12 @@ We report at k = 5, 10, and 20 to match the paper and to see how performance deg
 
 ### 6a. Incomplete or Uncertain Areas
 
-The GMF baseline code is complete and the full pipeline (raw data → preprocessing → k-core filtering → train/val/test split → training → evaluation) is end-to-end runnable. We've validated it with synthetic data and the architecture matches the paper exactly.
+The ItemKNN baseline code is complete and the full pipeline (raw data → preprocessing → k-core filtering → train/val/test split → fitting → evaluation) is end-to-end runnable. We've validated it with synthetic data and the implementation matches the standard ItemKNN algorithm.
 
-The main uncertainty is that we haven't yet reproduced the exact paper numbers on the real 20-core dataset — training takes about 2 hours on a single GPU and we're still waiting on compute time. We're fairly confident the numbers will land close to what the paper reports (HR@10 ≈ 0.52, NDCG@10 ≈ 0.30) since the architecture and training procedure match, but there could be small differences due to random seed, negative sampling strategy, or hyperparameter details not fully specified in the paper.
+The main uncertainty is that we haven't yet reproduced the exact paper numbers on the real 20-core dataset — fitting takes about 5 minutes on CPU but evaluation over all test users takes longer. We're fairly confident the numbers will land close to what the paper reports (HR@10 ≈ 0.04, NDCG@10 ≈ 0.008) since the algorithm is deterministic given the same data and negative samples, but there could be small differences due to random seed for negative sampling.
 
 ### 6b. What We Need Before Phase 2
 
-- **Compute access** — training on the 5-core subset (21M reviews) will require either a multi-GPU setup or patience. We'd appreciate guidance on whether the 20-core results are sufficient for the final report or if 5-core is expected.
+- **Compute access** — while ItemKNN runs on CPU, our neural variants (GMF, NeuMF, text-enhanced NCF) will need GPU time. We'd appreciate guidance on whether the 20-core results are sufficient for the final report or if 5-core is expected.
 
 - **Text encoder strategy** — for Pramod's text-enhanced variant, we're debating whether to fine-tune the sentence-transformer end-to-end or freeze it and only train a projection layer. Fine-tuning would be more expressive but much more expensive. Any guidance on what's reasonable for a class project would help.

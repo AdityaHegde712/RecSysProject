@@ -1,18 +1,17 @@
-from src.models.gmf import GMF
+from src.models.knn import ItemKNN
 
 
-def build_model(config: dict, num_users: int, num_items: int) -> GMF:
-    """Instantiate a GMF model from config.
+def build_model(config: dict, num_users: int, num_items: int) -> ItemKNN:
+    """Instantiate an ItemKNN model from config.
 
-    config['model']['name'] should be 'gmf'. Extra keys under
+    config['model']['name'] should be 'itemknn'. Extra keys under
     config['model'] are forwarded as kwargs.
     """
     model_cfg = config["model"]
     name = model_cfg["name"].lower()
 
-    if name == "gmf":
-        embed_dim = model_cfg.get("embed_dim",
-                                  model_cfg.get("embedding_dim", 64))
-        return GMF(num_users, num_items, embed_dim=embed_dim)
+    if name == "itemknn":
+        k_neighbors = model_cfg.get("k_neighbors", 50)
+        return ItemKNN(k_neighbors=k_neighbors)
 
-    raise ValueError(f"Unknown model: {name}. Only 'gmf' is supported.")
+    raise ValueError(f"Unknown model: {name}. Only 'itemknn' is supported.")

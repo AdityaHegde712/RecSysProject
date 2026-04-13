@@ -1,5 +1,5 @@
 #!/bin/bash
-# HPC convenience aliases for HotelRec (GMF baseline)
+# HPC convenience aliases for HotelRec (ItemKNN baseline)
 #
 # Source this file on the HPC login node:
 #   source scripts/hpc_aliases.sh
@@ -46,9 +46,10 @@ alias cleanall='rm -rf venv .wheels logs/slurm_* data/processed && echo "Cleaned
 
 # ─── Results ─────────────────────────────────────────────────────────
 alias results='ls -la results/ 2>/dev/null'
-alias checkpoints='ls -la results/gmf/best_model.pt results/gmf/last_model.pt 2>/dev/null'
+alias checkpoints='ls -la results/itemknn/ 2>/dev/null'
 
-# ─── GPU node interactive session ────────────────────────────────────
+# ─── Interactive session ─────────────────────────────────────────────
+alias cpunode='srun -n 1 -N 1 -c 4 --mem=16G --time=01:00:00 --pty /bin/bash'
 alias gpunode='srun -p gpu --gres=gpu -n 1 -N 1 -c 4 --mem=16G --time=01:00:00 --pty /bin/bash'
 
 # ─── Cluster info ────────────────────────────────────────────────────
@@ -65,12 +66,12 @@ echo "    hpa-download-sample    — download small sample for testing"
 echo "    hpa-explore            — print dataset statistics"
 echo ""
 echo "  Training:"
-echo "    hpa-run           — submit full pipeline (preprocess + train + eval)"
+echo "    hpa-run           — submit full pipeline (preprocess + fit + eval)"
 echo "    hpa-preprocess    — preprocess raw data"
-echo "    hpa-rec           — train GMF"
+echo "    hpa-rec           — fit ItemKNN"
 echo ""
 echo "  Evaluation:"
-echo "    hpa-eval          — evaluate GMF on test set"
+echo "    hpa-eval          — evaluate ItemKNN on test set"
 echo ""
 echo "  Utilities:"
 echo "    hpa-verify        — verify all deps are working"
@@ -80,4 +81,5 @@ echo "    killall           — cancel all your jobs"
 echo "    lastlog / lasterr — tail latest log/error"
 echo "    clearlogs         — delete all log files"
 echo "    cleandata         — delete processed data (force re-preprocess)"
-echo "    gpunode           — get interactive GPU session"
+echo "    cpunode           — get interactive CPU session (ItemKNN doesn't need GPU)"
+echo "    gpunode           — get interactive GPU session (for neural variants)"

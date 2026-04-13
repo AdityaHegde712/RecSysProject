@@ -7,11 +7,11 @@ Team: Aditya Hegde, Pramod Yadav, Hriday Ampavatina
 
 ## Overview
 
-We use **GMF** (Generalized Matrix Factorization, He et al., 2017) as our baseline for hotel recommendation on the [HotelRec](https://github.com/Diego999/HotelRec) dataset — 50M TripAdvisor hotel reviews. GMF learns user and item embeddings and scores interactions via element-wise product followed by a linear layer and sigmoid activation.
+We use **ItemKNN** (Sarwar et al., 2001) as our baseline — a standard item-based collaborative filtering method that recommends items similar to those the user has already interacted with, using cosine similarity. It builds a sparse user-item interaction matrix, computes item-item cosine similarity, and scores candidates by summing similarities to items in the user's history.
 
-The hotel domain has much higher sparsity than typical recommendation datasets (99.999% sparse at 5-core), which makes collaborative filtering particularly challenging. GMF handles this well because it learns dense embeddings that capture indirect user-item relationships, rather than relying on direct overlap like neighbor-based methods.
+ItemKNN is intentionally simple and non-neural. It runs on CPU in minutes, doesn't need a GPU, and provides a clear lower bound that neural approaches should beat. The hotel domain has extreme sparsity (99.999% at 5-core), which makes neighbor-based methods struggle — exactly the gap we want our neural variants to close.
 
-> **Note:** The full set of baselines (Mean, ItemKNN, UserKNN, PureSVD, MLP, NeuMF) is preserved on the [`feature/all-baselines`](../../tree/feature/all-baselines) branch.
+> **Note:** The full set of baselines (Mean, ItemKNN, UserKNN, PureSVD, GMF, MLP, NeuMF) is preserved on the [`feature/all-baselines`](../../tree/feature/all-baselines) branch.
 
 ---
 
@@ -44,35 +44,34 @@ HotelRec-HPA/
 │
 ├── configs/
 │   ├── data.yaml               # dataset paths, k-core values, split ratios
-│   └── gmf.yaml                # GMF model config
+│   └── itemknn.yaml            # ItemKNN model config
 ├── data/
 │   ├── raw/                    # original HotelRec JSON files
 │   └── processed/              # preprocessed interaction matrices
 ├── docs/                       # additional documentation
-├── logs/                       # training/eval logs
 ├── notebooks/                  # exploratory analysis
 ├── results/                    # evaluation outputs, checkpoints
 ├── scripts/                    # shell scripts, HPC job files
 │
 └── src/
     ├── __init__.py
-    ├── train.py                # training entry point (BPR loss)
+    ├── train.py                # training entry point (fit ItemKNN)
     ├── evaluate.py             # evaluation entry point (HR@k, NDCG@k)
     ├── data/                   # data loading, preprocessing, splitting
     │   ├── __init__.py
-    │   ├── dataset.py          # InteractionDataset, EvalInteractionDataset
+    │   ├── dataset.py          # load_split(), get_n_users_items()
     │   ├── preprocess.py       # raw JSON → filtered parquet
     │   └── split.py            # train/val/test splitting
     ├── models/
     │   ├── __init__.py
     │   ├── common.py           # build_model() factory
-    │   └── gmf.py              # Generalized Matrix Factorization
+    │   └── knn.py              # Item-based KNN collaborative filtering
     ├── metrics/
     │   ├── __init__.py
     │   └── ranking.py          # HR@k, NDCG@k, evaluate_ranking()
     └── utils/
         ├── __init__.py
-        ├── io.py               # config loading, checkpoint save/load
+        ├── io.py               # config loading, pickle save/load
         ├── seed.py             # set_seed() for reproducibility
         └── metrics_logger.py   # CSV metrics logging
 ```
@@ -91,11 +90,11 @@ pip install -e .
 # download and preprocess data
 python -m src.data.preprocess --kcore 20 --config configs/data.yaml
 
-# train GMF
-python -m src.train --config configs/gmf.yaml --kcore 20
+# train ItemKNN (no GPU needed — fits on CPU)
+python -m src.train --config configs/itemknn.yaml --kcore 20
 
 # evaluate
-python -m src.evaluate --config configs/gmf.yaml --kcore 20
+python -m src.evaluate --config configs/itemknn.yaml --kcore 20
 ```
 
 ---
@@ -166,19 +165,19 @@ scancel <job-id>         # cancel if needed
 
 ## Expected Results
 
-These are the GMF numbers reported in Antognini & Faltings (2020), Table 5.
+These are the ItemKNN numbers reported in Antognini & Faltings (2020), Table 5. ItemKNN doesn't need a GPU — it runs on CPU in minutes.
 
 **5-core subset:**
 
 | Model | HR@5 | NDCG@5 | HR@10 | NDCG@10 | HR@20 | NDCG@20 |
 |-------|------|--------|-------|---------|-------|---------|
-| GMF | 0.3899 | 0.2761 | 0.5340 | 0.3237 | 0.7055 | 0.3666 |
+| ItemKNN | 0.0162 | 0.0072 | 0.0238 | 0.0088 | 0.0340 | 0.0103 |
 
 **20-core subset:**
 
 | Model | HR@5 | NDCG@5 | HR@10 | NDCG@10 | HR@20 | NDCG@20 |
 |-------|------|--------|-------|---------|-------|---------|
-| GMF | 0.3705 | 0.2565 | 0.5219 | 0.3047 | 0.6913 | 0.3477 |
+| ItemKNN | 0.0236 | 0.0061 | 0.0411 | 0.0084 | 0.0682 | 0.0110 |
 
 ---
 
@@ -191,4 +190,4 @@ These are the GMF numbers reported in Antognini & Faltings (2020), Table 5.
 ## References
 
 - Antognini, D. & Faltings, B. (2020). *HotelRec: a Novel Very Large-Scale Hotel Recommendation Dataset*. In Proceedings of the 12th Language Resources and Evaluation Conference (LREC 2020), pages 4917–4924. [[Paper]](https://aclanthology.org/2020.lrec-1.605/) [[Dataset]](https://github.com/Diego999/HotelRec)
-- He, X., Liao, L., Zhang, H., Nie, L., Hu, X., & Chua, T.-S. (2017). *Neural Collaborative Filtering*. In Proceedings of the 26th International Conference on World Wide Web, pages 173–182. [[Paper]](https://arxiv.org/abs/1708.05031)
+- Sarwar, B., Karypis, G., Konstan, J., & Riedl, J. (2001). *Item-based Collaborative Filtering Recommendation Algorithms*. In Proceedings of the 10th International Conference on World Wide Web, pages 285–295. [[Paper]](https://dl.acm.org/doi/10.1145/371920.372071)
