@@ -263,7 +263,7 @@ def load_raw_data(raw_dir: str, chunk_size: int = 500_000) -> pd.DataFrame:
         if len(chunk_buf) >= chunk_size:
             all_chunks.append(pd.DataFrame(chunk_buf))
             total += len(chunk_buf)
-            print(f"  {total:,} reviews loaded...")
+            print(f"  {total:,} reviews loaded...", flush=True)
             chunk_buf = []
 
     if chunk_buf:

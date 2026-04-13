@@ -93,6 +93,9 @@ activate_env() {
     # project root on PYTHONPATH so 'import src' works
     export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
 
+    # unbuffered Python output so SLURM logs show progress in real time
+    export PYTHONUNBUFFERED=1
+
     # help PyTorch manage GPU memory fragmentation
     export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
 
