@@ -1,5 +1,5 @@
 from src.utils.seed import set_seed
-from src.utils.io import load_config, save_model, load_model
+from src.utils.io import load_config, save_model, load_model, save_checkpoint, load_checkpoint
 from src.utils.metrics_logger import MetricsLogger
 
 __all__ = [
@@ -7,5 +7,7 @@ __all__ = [
     "load_config",
     "save_model",
     "load_model",
+    "save_checkpoint",
+    "load_checkpoint",
     "MetricsLogger",
 ]

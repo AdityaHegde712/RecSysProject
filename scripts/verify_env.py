@@ -60,7 +60,7 @@ def check_src_imports():
         'src.data.dataset',
         'src.data.preprocess',
         'src.data.split',
-        'src.metrics.ranking',
+        'src.evaluation.ranking',
         'src.utils.io',
         'src.utils.seed',
         'src.utils.metrics_logger',
@@ -80,8 +80,8 @@ def check_script_syntax():
     global PASS, FAIL
     import py_compile
     scripts = [
-        'src/train.py',
-        'src/evaluate.py',
+        'src/run_baselines.py',
+        'src/train_gmf.py',
     ]
     for script in scripts:
         try:

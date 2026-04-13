@@ -2,7 +2,8 @@
 dataset:
   name: HotelRec
   source: https://github.com/Diego999/HotelRec
-  raw_dir: data/raw
+  raw_file: data/raw/HotelRec.txt    # single JSONL file, one review per line
+  raw_dir: data/raw                   # directory for archive-based loading
   processed_dir: data/processed
 
 kcore:
@@ -21,11 +22,11 @@ text:
   min_length: 1
 
 sub_ratings:
-  - Service
-  - Cleanliness
-  - Location
-  - Value
-  - Rooms
-  - Sleep Quality
-  - Check-In
-  - Business Service
+  - service
+  - cleanliness
+  - location
+  - value
+  - rooms
+  - sleep_quality
+  - check_in
+  - business_service
