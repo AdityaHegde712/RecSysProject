@@ -29,6 +29,7 @@ alias hpa-run='sbatch scripts/run_hpc.sh'
 alias hpa-preprocess='sbatch scripts/run_hpc.sh preprocess'
 alias hpa-rec='sbatch scripts/run_hpc.sh rec'
 alias hpa-eval='sbatch scripts/run_hpc.sh eval'
+alias hpa-explore='_hpa_python scripts/explore_data.py --data_dir data/raw'
 alias hpa-download='bash scripts/download_data.sh full'
 alias hpa-download-sample='bash scripts/download_data.sh sample'
 
@@ -61,6 +62,7 @@ echo "  Setup & Data:"
 echo "    hpa-setup              — one-time environment setup"
 echo "    hpa-download           — download full HotelRec dataset"
 echo "    hpa-download-sample    — download small sample for testing"
+echo "    hpa-explore            — print dataset statistics"
 echo ""
 echo "  Training:"
 echo "    hpa-run           — submit full pipeline (preprocess + train + eval)"
