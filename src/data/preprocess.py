@@ -69,20 +69,32 @@ def stream_from_tar(archive_path: str):
         for member in tar:
             if not member.isfile():
                 continue
-            if not member.name.endswith(".json"):
+            if not (member.name.endswith(".json") or member.name.endswith(".txt")):
                 continue
             n_files += 1
             f = tar.extractfile(member)
             if f is None:
                 continue
             try:
-                content = f.read().decode("utf-8", errors="replace")
-                data = json.loads(content)
-                if isinstance(data, list):
-                    for r in data:
-                        yield parse_review(r)
-                elif isinstance(data, dict):
-                    yield parse_review(data)
+                if member.size > 100_000_000:  # > 100MB → stream line-by-line (JSONL)
+                    print(f"  Reading {member.name} ({member.size / 1e9:.1f} GB uncompressed)")
+                    text_stream = io.TextIOWrapper(f, encoding="utf-8", errors="replace")
+                    for line in text_stream:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            yield parse_review(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
+                else:
+                    content = f.read().decode("utf-8", errors="replace")
+                    data = json.loads(content)
+                    if isinstance(data, list):
+                        for r in data:
+                            yield parse_review(r)
+                    elif isinstance(data, dict):
+                        yield parse_review(data)
             except (json.JSONDecodeError, UnicodeDecodeError):
                 continue
             finally:
@@ -93,14 +105,38 @@ def stream_from_tar(archive_path: str):
 
 
 def stream_from_zip(archive_path: str):
-    """Stream reviews from a zip archive without full extraction."""
-    print(f"  Streaming from zip archive: {archive_path}")
-    n_files = 0
+    """Stream reviews from a zip archive. Handles both multi-file and single-file layouts."""
+    print(f"  Streaming from zip: {archive_path}")
     with zipfile.ZipFile(archive_path, "r") as zf:
-        for name in zf.namelist():
-            if not name.endswith(".json"):
+        for info in zf.infolist():
+            if info.is_dir():
                 continue
-            n_files += 1
+            name = info.filename
+            # accept .json and .txt files
+            if not (name.endswith(".json") or name.endswith(".txt")):
+                continue
+
+            print(f"  Reading {name} ({info.file_size / 1e9:.1f} GB uncompressed)")
+
+            if info.file_size > 100_000_000:  # > 100MB → stream line-by-line (JSONL)
+                with zf.open(name) as f:
+                    text_stream = io.TextIOWrapper(f, encoding="utf-8", errors="replace")
+                    n = 0
+                    for line in text_stream:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            yield parse_review(json.loads(line))
+                            n += 1
+                            if n % 1_000_000 == 0:
+                                print(f"    {n:,} reviews streamed...")
+                        except json.JSONDecodeError:
+                            continue
+                    print(f"  Done: {n:,} reviews from {name}")
+                continue
+
+            # Small file — load directly
             try:
                 content = zf.read(name).decode("utf-8", errors="replace")
                 data = json.loads(content)
@@ -111,33 +147,48 @@ def stream_from_zip(archive_path: str):
                     yield parse_review(data)
             except (json.JSONDecodeError, UnicodeDecodeError):
                 continue
-            if n_files % 10000 == 0:
-                print(f"    {n_files} hotel files processed...")
-    print(f"  Done: {n_files} hotel files from archive")
 
 
 def stream_from_json(fpath: str):
-    """Stream reviews from a single large JSON file using ijson."""
+    """Stream reviews from a single JSON or JSONL file."""
     fsize = os.path.getsize(fpath)
-    if fsize > 100_000_000:  # > 100MB
-        try:
-            import ijson
-            print(f"  Streaming {fpath} with ijson ({fsize / 1e9:.1f} GB)")
-            with open(fpath, "rb") as f:
-                for review in ijson.items(f, "item"):
-                    yield parse_review(review)
-            return
-        except ImportError:
-            print("  WARNING: ijson not installed. pip install ijson")
-            print("  Loading entire file into memory...")
 
-    with open(fpath) as f:
-        data = json.load(f)
-    if isinstance(data, list):
-        for r in data:
-            yield parse_review(r)
-    else:
-        yield parse_review(data)
+    if fsize > 100_000_000:  # > 100MB → stream line-by-line (JSONL)
+        print(f"  Streaming {fpath} line-by-line ({fsize / 1e9:.1f} GB)")
+        with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    yield parse_review(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        return
+
+    # Small file — try JSON array first, fall back to JSONL
+    with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+        content = f.read()
+
+    content_stripped = content.lstrip()
+    if content_stripped.startswith("["):
+        try:
+            data = json.loads(content)
+            for r in (data if isinstance(data, list) else [data]):
+                yield parse_review(r)
+            return
+        except json.JSONDecodeError:
+            pass
+
+    # JSONL fallback
+    for line in content.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            yield parse_review(json.loads(line))
+        except json.JSONDecodeError:
+            continue
 
 
 def find_data_source(raw_dir: str):
@@ -156,22 +207,29 @@ def find_data_source(raw_dir: str):
         if archives:
             return ("archive", archives[0])
 
-    # check for JSON files
-    json_files = sorted(raw_path.glob("*.json"))
-    if json_files:
-        if len(json_files) == 1:
-            return ("single_json", json_files[0])
-        return ("multi_json", json_files)
+    # check for JSON / TXT files
+    data_extensions = {".json", ".txt"}
+    data_files = sorted(
+        p for p in raw_path.iterdir()
+        if p.is_file() and p.suffix.lower() in data_extensions
+    )
+    if data_files:
+        if len(data_files) == 1:
+            return ("single_json", data_files[0])
+        return ("multi_json", data_files)
 
     # check subdirectories (archive might extract into a subfolder)
     for subdir in raw_path.iterdir():
         if subdir.is_dir():
-            sub_jsons = list(subdir.glob("*.json"))
-            if sub_jsons:
-                return ("multi_json", sorted(sub_jsons))
+            sub_files = sorted(
+                p for p in subdir.iterdir()
+                if p.is_file() and p.suffix.lower() in data_extensions
+            )
+            if sub_files:
+                return ("multi_json", sub_files)
 
     raise FileNotFoundError(
-        f"No data found in {raw_dir}. Expected .tar.gz/.zip archive or .json files.\n"
+        f"No data found in {raw_dir}. Expected .tar.gz/.zip archive or .json/.txt files.\n"
         f"Download with: bash scripts/download_data.sh full"
     )
 

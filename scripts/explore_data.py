@@ -132,7 +132,8 @@ def find_data_source(data_dir: str):
 
 
 def stream_archive(archive_path):
-    """Stream reviews from a tar or zip archive without extracting to disk."""
+    """Stream reviews from a zip/tar archive."""
+    import io as _io
     import tarfile as _tarfile
     import zipfile as _zipfile
 
@@ -140,9 +141,26 @@ def stream_archive(archive_path):
 
     if path_str.endswith(".zip"):
         with _zipfile.ZipFile(path_str, "r") as zf:
-            for name in zf.namelist():
-                if not name.endswith(".json"):
+            for info in zf.infolist():
+                if info.is_dir():
                     continue
+                name = info.filename
+                if not (name.endswith(".json") or name.endswith(".txt")):
+                    continue
+
+                if info.file_size > 100_000_000:  # > 100MB → stream line-by-line (JSONL)
+                    with zf.open(name) as f:
+                        text_stream = _io.TextIOWrapper(f, encoding="utf-8", errors="replace")
+                        for line in text_stream:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                yield json.loads(line)
+                            except json.JSONDecodeError:
+                                continue
+                    continue
+
                 try:
                     content = zf.read(name).decode("utf-8", errors="replace")
                     data = json.loads(content)
@@ -153,22 +171,35 @@ def stream_archive(archive_path):
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     continue
     else:
-        # tar.gz, tar.bz2, etc.
+        # tar handling — same fix for .txt
         with _tarfile.open(path_str, "r:*") as tar:
             for member in tar:
-                if not member.isfile() or not member.name.endswith(".json"):
+                if not member.isfile():
+                    continue
+                if not (member.name.endswith(".json") or member.name.endswith(".txt")):
                     continue
                 f = tar.extractfile(member)
                 if f is None:
                     continue
                 try:
-                    content = f.read().decode("utf-8", errors="replace")
-                    data = json.loads(content)
-                    if isinstance(data, list):
-                        yield from data
-                    elif isinstance(data, dict):
-                        yield data
-                except (json.JSONDecodeError, UnicodeDecodeError):
+                    if member.size > 100_000_000:  # > 100MB → stream line-by-line (JSONL)
+                        text_stream = _io.TextIOWrapper(f, encoding="utf-8", errors="replace")
+                        for line in text_stream:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                yield json.loads(line)
+                            except json.JSONDecodeError:
+                                continue
+                    else:
+                        content = f.read().decode("utf-8", errors="replace")
+                        data = json.loads(content)
+                        if isinstance(data, list):
+                            yield from data
+                        elif isinstance(data, dict):
+                            yield data
+                except Exception:
                     continue
                 finally:
                     f.close()
