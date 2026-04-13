@@ -270,23 +270,29 @@ def load_raw_data(raw_dir: str, chunk_size: int = 500_000) -> pd.DataFrame:
         all_chunks.append(pd.DataFrame(chunk_buf))
         total += len(chunk_buf)
 
+    print(f"  Concatenating {len(all_chunks)} chunks...", flush=True)
     df = pd.concat(all_chunks, ignore_index=True)
-    print(f"Loaded {len(df):,} total reviews")
+    print(f"Loaded {len(df):,} total reviews", flush=True)
     return df
 
 
-def build_id_maps(df: pd.DataFrame) -> tuple:
+def build_id_maps(df):
     """Map user_url and hotel_url to contiguous integer IDs."""
+    print("  Finding unique users...", flush=True)
     users = sorted(df["user_url"].unique())
+    print(f"  Finding unique items... ({len(users):,} users found)", flush=True)
     items = sorted(df["hotel_url"].unique())
+    print(f"  Building ID maps... ({len(items):,} items found)", flush=True)
 
     user2id = {u: i for i, u in enumerate(users)}
     item2id = {it: i for i, it in enumerate(items)}
 
+    print("  Mapping IDs to DataFrame...", flush=True)
     df = df.copy()
     df["user_id"] = df["user_url"].map(user2id)
     df["item_id"] = df["hotel_url"].map(item2id)
 
+    print("  ID mapping done.", flush=True)
     return user2id, item2id, df
 
 
@@ -307,7 +313,8 @@ def kcore_filter(df: pd.DataFrame, k: int) -> pd.DataFrame:
         df = df[df["item_id"].isin(valid_items)]
 
         print(f"  k-core iter {iteration}: {len(df):,} interactions, "
-              f"{df['user_id'].nunique():,} users, {df['item_id'].nunique():,} items")
+              f"{df['user_id'].nunique():,} users, {df['item_id'].nunique():,} items",
+              flush=True)
 
     return df.reset_index(drop=True)
 
