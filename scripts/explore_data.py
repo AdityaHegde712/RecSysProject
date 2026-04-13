@@ -6,6 +6,10 @@ Reads JSONL files from the raw data directory, computes counts, distributions,
 and coverage stats, then prints a formatted summary you can paste straight
 into the checkpoint document.
 
+Uses streaming/online statistics (Welford's algorithm) so memory stays O(1)
+for all accumulators except user_review_counts and item_review_counts (which
+are needed for per-user/per-item stats and cannot be avoided).
+
 Usage:
     python scripts/explore_data.py --data_dir data/raw --sample_size 0
 
@@ -15,12 +19,80 @@ Usage:
 
 import argparse
 import json
+import math
 import os
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-import numpy as np
+
+# ── streaming stats helper ───────────────────────────────────────────────────
+
+class RunningStats:
+    """Welford's online algorithm for mean and variance in O(1) memory."""
+
+    __slots__ = ("n", "_mean", "_M2", "_min", "_max")
+
+    def __init__(self):
+        self.n = 0
+        self._mean = 0.0
+        self._M2 = 0.0
+        self._min = float("inf")
+        self._max = float("-inf")
+
+    def update(self, x: float):
+        self.n += 1
+        delta = x - self._mean
+        self._mean += delta / self.n
+        delta2 = x - self._mean
+        self._M2 += delta * delta2
+        if x < self._min:
+            self._min = x
+        if x > self._max:
+            self._max = x
+
+    @property
+    def mean(self) -> float:
+        return self._mean if self.n > 0 else 0.0
+
+    @property
+    def variance(self) -> float:
+        return self._M2 / self.n if self.n > 1 else 0.0
+
+    @property
+    def std(self) -> float:
+        return math.sqrt(self.variance)
+
+    @property
+    def min(self) -> float:
+        return self._min if self.n > 0 else 0.0
+
+    @property
+    def max(self) -> float:
+        return self._max if self.n > 0 else 0.0
+
+
+def _median_from_counter(counter: Counter) -> float:
+    """Compute exact median from a Counter of {value: count}."""
+    if not counter:
+        return 0.0
+    total = sum(counter.values())
+    if total == 0:
+        return 0.0
+    mid = total // 2
+    cumulative = 0
+    for val in sorted(counter.keys()):
+        cumulative += counter[val]
+        if total % 2 == 1:
+            if cumulative > mid:
+                return float(val)
+        else:
+            if cumulative == mid:
+                next_val = min(k for k in counter if k > val)
+                return (val + next_val) / 2.0
+            elif cumulative > mid:
+                return float(val)
+    return 0.0
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -41,6 +113,23 @@ SUB_RATING_DISPLAY = {
     "check-in": "Check-In",
     "business service": "Business Service",
 }
+
+# Review-length bucket boundaries (inclusive)
+LENGTH_BUCKETS = [(1, 10), (11, 50), (51, 100), (101, 200), (201, 500), (501, None)]
+
+# User-activity bucket boundaries
+USER_ACTIVITY_BUCKETS = [(1, 1), (2, 4), (5, 9), (10, 19), (20, 49), (50, 99), (100, None)]
+
+
+def _length_bucket_key(word_count: int) -> str:
+    """Return the bucket label for a given word count."""
+    for lo, hi in LENGTH_BUCKETS:
+        if hi is None:
+            if word_count >= lo:
+                return f"{lo}+"
+        elif lo <= word_count <= hi:
+            return f"{lo}-{hi}"
+    return "0"
 
 
 def stream_file(fpath: str):
@@ -217,6 +306,7 @@ def explore(data_dir: str, sample_size: int = 0):
         print("  bash scripts/download_data.sh sample   # synthetic sample for testing")
         sys.exit(1)
 
+    total_files = 0
     if source_type == "archive":
         print(f"Found archive: {source.name} ({source.stat().st_size / 1e9:.1f} GB)")
         print("Streaming reviews directly from archive (no extraction needed)")
@@ -234,17 +324,29 @@ def explore(data_dir: str, sample_size: int = 0):
         review_stream = None  # will iterate files below
     print()
 
-    # Accumulators
+    # ── Streaming accumulators (O(1) memory except Counters) ──────────
+
     total_reviews = 0
-    users = set()
-    items = set()
-    ratings = []
-    review_lengths = []          # word count per review
-    dates = []                   # raw date strings
+
+    # Rating histogram (ratings are integers 1-5, so exact histogram)
+    rating_hist = Counter()          # {1: N, 2: N, ...}
+    rating_stats = RunningStats()
+
+    # Review-length bucketed counts + running stats
+    length_bucket_counts = Counter()  # {"1-10": N, "11-50": N, ...}
+    length_stats = RunningStats()
+    n_with_text = 0
+
+    # Temporal: year → count (extracted inline)
+    year_counts = Counter()
+
+    # Sub-ratings: running stats per key (O(1) per key)
+    sub_rating_counts = {k: 0 for k in SUB_RATING_KEYS}
+    sub_rating_stats = {k: RunningStats() for k in SUB_RATING_KEYS}
+
+    # User/item Counters (unavoidable — needed for per-user/per-item stats)
     user_review_counts = Counter()
     item_review_counts = Counter()
-    sub_rating_counts = {k: 0 for k in SUB_RATING_KEYS}
-    sub_rating_values = {k: [] for k in SUB_RATING_KEYS}
 
     # Build a unified review iterator
     if review_stream is not None:
@@ -268,17 +370,17 @@ def explore(data_dir: str, sample_size: int = 0):
         user = rec.get("author") or rec.get("user_url") or rec.get("user_id", "")
         item = rec.get("hotel_url") or rec.get("item_id", "")
         if user:
-            users.add(user)
             user_review_counts[user] += 1
         if item:
-            items.add(item)
             item_review_counts[item] += 1
 
         # Overall rating
         rating = rec.get("rating") or rec.get("overall_rating")
         if rating is not None:
             try:
-                ratings.append(float(rating))
+                r = float(rating)
+                rating_stats.update(r)
+                rating_hist[round(r)] += 1
             except (ValueError, TypeError):
                 pass
 
@@ -286,12 +388,23 @@ def explore(data_dir: str, sample_size: int = 0):
         text = rec.get("text", "")
         if text:
             word_count = len(text.split())
-            review_lengths.append(word_count)
+            length_stats.update(word_count)
+            n_with_text += 1
+            bucket = _length_bucket_key(word_count)
+            length_bucket_counts[bucket] += 1
 
-        # Date
+        # Date — extract year inline instead of storing the string
         date_val = rec.get("date", "")
         if date_val:
-            dates.append(str(date_val))
+            d_str = str(date_val).strip()
+            for fmt_try in [d_str[:4], d_str[-4:]]:
+                try:
+                    year = int(fmt_try)
+                    if 1990 <= year <= 2030:
+                        year_counts[year] += 1
+                        break
+                except ValueError:
+                    continue
 
         # Sub-ratings — could be in property_dict or top-level
         prop = rec.get("property_dict", {}) or {}
@@ -301,16 +414,16 @@ def explore(data_dir: str, sample_size: int = 0):
             if val is None:
                 val = rec.get(key) or rec.get(key.replace(" ", "_"))
             if val is not None:
-                sub_rating_counts[key] += 1
                 try:
-                    sub_rating_values[key].append(float(val))
+                    sub_rating_stats[key].update(float(val))
+                    sub_rating_counts[key] += 1
                 except (ValueError, TypeError):
                     pass
 
-    # ── compute stats ────────────────────────────────────────────────────
+    # ── compute derived stats ─────────────────────────────────────────────
 
-    n_users = len(users)
-    n_items = len(items)
+    n_users = len(user_review_counts)
+    n_items = len(item_review_counts)
     n_interactions = total_reviews
 
     if n_users > 0 and n_items > 0:
@@ -323,34 +436,45 @@ def explore(data_dir: str, sample_size: int = 0):
     avg_per_user = n_interactions / n_users if n_users else 0
     avg_per_item = n_interactions / n_items if n_items else 0
 
-    ratings_arr = np.array(ratings) if ratings else np.array([0.0])
-    lengths_arr = np.array(review_lengths) if review_lengths else np.array([0])
+    # User activity distribution — build a Counter of {count: n_users}
+    user_activity_hist = Counter()
+    users_1_review = 0
+    users_lt5 = 0
+    max_user_reviews = 0
+    for c in user_review_counts.values():
+        user_activity_hist[c] += 1
+        if c == 1:
+            users_1_review += 1
+        if c < 5:
+            users_lt5 += 1
+        if c > max_user_reviews:
+            max_user_reviews = c
 
-    # User activity distribution
-    user_counts_list = list(user_review_counts.values())
-    user_counts_arr = np.array(user_counts_list) if user_counts_list else np.array([0])
-    users_1_review = sum(1 for c in user_counts_list if c == 1)
-    users_lt5 = sum(1 for c in user_counts_list if c < 5)
+    median_per_user = _median_from_counter(user_activity_hist)
 
-    # Item popularity distribution
-    item_counts_list = list(item_review_counts.values())
-    item_counts_arr = np.array(item_counts_list) if item_counts_list else np.array([0])
+    # Item popularity distribution — build a Counter of {count: n_items}
+    item_popularity_hist = Counter()
+    for c in item_review_counts.values():
+        item_popularity_hist[c] += 1
 
-    # Temporal distribution
-    year_counts = Counter()
-    for d in dates:
-        # Try to extract year from various date formats
-        d_str = str(d).strip()
-        for fmt_try in [d_str[:4], d_str[-4:]]:
-            try:
-                year = int(fmt_try)
-                if 1990 <= year <= 2030:
-                    year_counts[year] += 1
-                    break
-            except ValueError:
-                continue
+    median_per_item = _median_from_counter(item_popularity_hist)
 
-    # ── print results ────────────────────────────────────────────────────
+    # User activity buckets
+    user_bucket_counts = {}
+    for lo, hi in USER_ACTIVITY_BUCKETS:
+        count = 0
+        for c, n in user_activity_hist.items():
+            if hi is None:
+                if c >= lo:
+                    count += n
+            elif lo <= c <= hi:
+                count += n
+        if hi is None:
+            user_bucket_counts[f"{lo}+"] = count
+        else:
+            user_bucket_counts[f"{lo}-{hi}"] = count
+
+    # ── print results ─────────────────────────────────────────────────────
 
     sep = "=" * 70
     print(f"\n{sep}")
@@ -369,43 +493,46 @@ def explore(data_dir: str, sample_size: int = 0):
     print(f"  Density:               {density:>14.5f}%")
     print(f"  Sparsity:              {sparsity:>14.5f}%")
     print(f"  Avg reviews/user:      {avg_per_user:>15.2f}")
-    print(f"  Median reviews/user:   {np.median(user_counts_arr):>15.1f}")
+    print(f"  Median reviews/user:   {median_per_user:>15.1f}")
     print(f"  Avg reviews/item:      {avg_per_item:>15.2f}")
-    print(f"  Median reviews/item:   {np.median(item_counts_arr):>15.1f}")
+    print(f"  Median reviews/item:   {median_per_item:>15.1f}")
 
     print(f"\n{'─' * 40}")
     print("  2. RATING DISTRIBUTION")
     print(f"{'─' * 40}")
-    print(f"  Mean rating:           {np.mean(ratings_arr):>15.2f}")
-    print(f"  Median rating:         {np.median(ratings_arr):>15.1f}")
-    print(f"  Std rating:            {np.std(ratings_arr):>15.2f}")
-    print(f"  Min rating:            {np.min(ratings_arr):>15.1f}")
-    print(f"  Max rating:            {np.max(ratings_arr):>15.1f}")
+    print(f"  Mean rating:           {rating_stats.mean:>15.2f}")
+    print(f"  Median rating:         {_median_from_counter(rating_hist):>15.1f}")
+    print(f"  Std rating:            {rating_stats.std:>15.2f}")
+    print(f"  Min rating:            {rating_stats.min:>15.1f}")
+    print(f"  Max rating:            {rating_stats.max:>15.1f}")
     print()
     print("  Rating histogram:")
-    if len(ratings) > 0:
+    if rating_stats.n > 0:
         for star in [1, 2, 3, 4, 5]:
-            count = sum(1 for r in ratings if round(r) == star)
-            pct = count / len(ratings) * 100
+            count = rating_hist.get(star, 0)
+            pct = count / rating_stats.n * 100
             bar = "█" * int(pct / 2)
             print(f"    {star}★: {count:>10,} ({pct:5.1f}%) {bar}")
 
     print(f"\n{'─' * 40}")
     print("  3. USER ACTIVITY DISTRIBUTION")
     print(f"{'─' * 40}")
-    print(f"  Users with exactly 1 review:  {users_1_review:>10,} ({users_1_review / n_users * 100:.2f}%)" if n_users else "  N/A")
-    print(f"  Users with < 5 reviews:       {users_lt5:>10,} ({users_lt5 / n_users * 100:.2f}%)" if n_users else "  N/A")
-    print(f"  Max reviews by one user:      {np.max(user_counts_arr):>10,}")
+    if n_users:
+        print(f"  Users with exactly 1 review:  {users_1_review:>10,} ({users_1_review / n_users * 100:.2f}%)")
+        print(f"  Users with < 5 reviews:       {users_lt5:>10,} ({users_lt5 / n_users * 100:.2f}%)")
+    else:
+        print("  N/A")
+    print(f"  Max reviews by one user:      {max_user_reviews:>10,}")
     print()
     print("  Activity buckets:")
-    buckets = [(1, 1), (2, 4), (5, 9), (10, 19), (20, 49), (50, 99), (100, None)]
-    for lo, hi in buckets:
+    for lo, hi in USER_ACTIVITY_BUCKETS:
         if hi is None:
-            count = sum(1 for c in user_counts_list if c >= lo)
-            label = f"  {lo}+"
+            label = f"{lo}+"
+            key = f"{lo}+"
         else:
-            count = sum(1 for c in user_counts_list if lo <= c <= hi)
-            label = f"  {lo}-{hi}"
+            label = f"{lo}-{hi}"
+            key = f"{lo}-{hi}"
+        count = user_bucket_counts.get(key, 0)
         pct = count / n_users * 100 if n_users else 0
         print(f"    {label:>8s} reviews: {count:>10,} users ({pct:5.1f}%)")
 
@@ -415,32 +542,31 @@ def explore(data_dir: str, sample_size: int = 0):
     for key in SUB_RATING_KEYS:
         cnt = sub_rating_counts[key]
         pct = cnt / n_interactions * 100 if n_interactions else 0
-        vals = sub_rating_values[key]
-        avg_str = f"avg={np.mean(vals):.2f}" if vals else "avg=N/A"
+        stats = sub_rating_stats[key]
+        avg_str = f"avg={stats.mean:.2f}" if stats.n > 0 else "avg=N/A"
         display = SUB_RATING_DISPLAY[key]
         print(f"    {display:<20s}: {cnt:>10,} ({pct:5.2f}%)  {avg_str}")
 
     print(f"\n{'─' * 40}")
     print("  5. REVIEW TEXT LENGTH (words)")
     print(f"{'─' * 40}")
-    if len(review_lengths) > 0:
-        print(f"  Reviews with text:     {len(review_lengths):>15,} ({len(review_lengths) / n_interactions * 100:.1f}%)")
-        print(f"  Mean length:           {np.mean(lengths_arr):>15.2f}")
-        print(f"  Median length:         {np.median(lengths_arr):>15.1f}")
-        print(f"  Std length:            {np.std(lengths_arr):>15.2f}")
-        print(f"  Min length:            {np.min(lengths_arr):>15}")
-        print(f"  Max length:            {np.max(lengths_arr):>15}")
+    if n_with_text > 0:
+        print(f"  Reviews with text:     {n_with_text:>15,} ({n_with_text / n_interactions * 100:.1f}%)")
+        print(f"  Mean length:           {length_stats.mean:>15.2f}")
+        print(f"  Std length:            {length_stats.std:>15.2f}")
+        print(f"  Min length:            {length_stats.min:>15.0f}")
+        print(f"  Max length:            {length_stats.max:>15.0f}")
         print()
         print("  Length buckets:")
-        len_buckets = [(1, 10), (11, 50), (51, 100), (101, 200), (201, 500), (501, None)]
-        for lo, hi in len_buckets:
+        for lo, hi in LENGTH_BUCKETS:
             if hi is None:
-                count = sum(1 for l in review_lengths if l >= lo)
                 label = f"{lo}+"
+                key = f"{lo}+"
             else:
-                count = sum(1 for l in review_lengths if lo <= l <= hi)
                 label = f"{lo}-{hi}"
-            pct = count / len(review_lengths) * 100
+                key = f"{lo}-{hi}"
+            count = length_bucket_counts.get(key, 0)
+            pct = count / n_with_text * 100
             print(f"    {label:>8s} words: {count:>10,} ({pct:5.1f}%)")
     else:
         print("  No review text found.")
@@ -457,7 +583,7 @@ def explore(data_dir: str, sample_size: int = 0):
     else:
         print("  Could not parse dates.")
 
-    # ── markdown table for easy copy-paste ───────────────────────────────
+    # ── markdown table for easy copy-paste ────────────────────────────────
 
     print(f"\n{sep}")
     print("  COPY-PASTE TABLE FOR CHECKPOINT (Section 1a)")
@@ -471,12 +597,12 @@ def explore(data_dir: str, sample_size: int = 0):
     print(f"| Density | {density:.5f}% |")
     print(f"| Sparsity | {sparsity:.5f}% |")
     print(f"| Avg interactions per user | {avg_per_user:.2f} |")
-    print(f"| Median interactions per user | {np.median(user_counts_arr):.1f} |")
+    print(f"| Median interactions per user | {median_per_user:.1f} |")
     print(f"| Avg interactions per item | {avg_per_item:.2f} |")
-    print(f"| Median interactions per item | {np.median(item_counts_arr):.1f} |")
-    print(f"| Mean rating | {np.mean(ratings_arr):.2f} ± {np.std(ratings_arr):.2f} |")
-    print(f"| Median rating | {np.median(ratings_arr):.1f} |")
-    print(f"| Mean review length (words) | {np.mean(lengths_arr):.2f} |")
+    print(f"| Median interactions per item | {median_per_item:.1f} |")
+    print(f"| Mean rating | {rating_stats.mean:.2f} ± {rating_stats.std:.2f} |")
+    print(f"| Median rating | {_median_from_counter(rating_hist):.1f} |")
+    print(f"| Mean review length (words) | {length_stats.mean:.2f} |")
 
     sub_parts = []
     for key in SUB_RATING_KEYS:
