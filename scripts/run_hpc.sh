@@ -43,15 +43,10 @@ set -o pipefail
 KCORE=20  # k-core filtering threshold
 
 # ─────────────────────────────────────────────────────────────────────
-# PROJECT DIR
+# PROJECT DIR — resolve from script location, not cwd
 # ─────────────────────────────────────────────────────────────────────
-if [ -f "scripts/run_hpc.sh" ]; then
-    PROJECT_DIR="$(pwd)"
-elif [ -f "run_hpc.sh" ]; then
-    PROJECT_DIR="$(cd .. && pwd)"
-else
-    PROJECT_DIR="${SLURM_SUBMIT_DIR:-.}"
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR"
 
 mkdir -p logs results
@@ -59,7 +54,7 @@ mkdir -p logs results
 VENV_DIR="${PROJECT_DIR}/venv"
 
 echo "============================================"
-echo "HotelRec — HPC Job (GMF baseline)"
+echo "HotelRec — HPC Job (ItemKNN baseline)"
 echo "============================================"
 echo "Job ID:      ${SLURM_JOB_ID:-local}"
 echo "Node:        ${SLURM_NODELIST:-$(hostname)}"
