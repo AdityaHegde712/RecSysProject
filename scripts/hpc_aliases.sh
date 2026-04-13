@@ -12,24 +12,32 @@ alias jobs='squeue -u $USER'
 alias myjobs='squeue -u $USER --format="%.8i %.20j %.8T %.10M %.6D %R"'
 alias killall='scancel -u $USER'
 
-# ─── Activate venv helper (CentOS 7 default is Python 2.7) ──────────
-_hpa_python() {
-    if [ -f "venv/bin/python" ]; then
-        venv/bin/python "$@"
-    else
-        python3 "$@"
+# ─── Activate venv (auto-activates if not already active) ────────────
+_hpa_activate() {
+    if [ -z "$VIRTUAL_ENV" ]; then
+        if [ -f "venv/bin/activate" ]; then
+            source venv/bin/activate
+        elif [ -f ".venv/bin/activate" ]; then
+            source .venv/bin/activate
+        fi
     fi
+}
+
+_hpa_run() {
+    _hpa_activate
+    python "$@"
 }
 
 # ─── Quick submit ────────────────────────────────────────────────────
 alias hpa-setup='bash scripts/run_hpc.sh setup'
-alias hpa-verify='_hpa_python scripts/verify_env.py'
-alias hpa-validate='_hpa_python scripts/validate_pipeline.py'
+alias hpa-verify='_hpa_run scripts/verify_env.py'
+alias hpa-validate='_hpa_run scripts/validate_pipeline.py'
 alias hpa-run='sbatch scripts/run_hpc.sh'
-alias hpa-preprocess='sbatch scripts/run_hpc.sh preprocess'
-alias hpa-rec='sbatch scripts/run_hpc.sh rec'
-alias hpa-eval='sbatch scripts/run_hpc.sh eval'
-alias hpa-explore='_hpa_python scripts/explore_data.py --data_dir data/raw'
+alias hpa-preprocess='_hpa_activate && python -m src.data.preprocess --kcore 20 --config configs/data.yaml'
+alias hpa-split='_hpa_activate && python -m src.data.split --kcore 20 --config configs/data.yaml'
+alias hpa-train='_hpa_activate && python -m src.train --config configs/itemknn.yaml --kcore 20'
+alias hpa-eval='_hpa_activate && python -m src.evaluate --config configs/itemknn.yaml --kcore 20'
+alias hpa-explore='_hpa_run scripts/explore_data.py --data_dir data/raw'
 alias hpa-download='bash scripts/download_data.sh full'
 alias hpa-download-sample='bash scripts/download_data.sh sample'
 
@@ -57,7 +65,7 @@ alias nodes='sinfo -N -l'
 alias gpus='sinfo -p gpu -N -l'
 alias quota='df -h /home/$USER'
 
-echo "HotelRec HPC aliases loaded. Commands:"
+echo "HotelRec HPC aliases loaded (venv auto-activates). Commands:"
 echo ""
 echo "  Setup & Data:"
 echo "    hpa-setup              — one-time environment setup"
@@ -65,13 +73,12 @@ echo "    hpa-download           — download full HotelRec dataset"
 echo "    hpa-download-sample    — download small sample for testing"
 echo "    hpa-explore            — print dataset statistics"
 echo ""
-echo "  Training:"
-echo "    hpa-run           — submit full pipeline (preprocess + fit + eval)"
-echo "    hpa-preprocess    — preprocess raw data"
-echo "    hpa-rec           — fit ItemKNN"
-echo ""
-echo "  Evaluation:"
+echo "  Pipeline (auto-activates venv):"
+echo "    hpa-preprocess    — k-core filter raw data → parquet"
+echo "    hpa-split         — split into train/val/test"
+echo "    hpa-train         — fit ItemKNN on training data"
 echo "    hpa-eval          — evaluate ItemKNN on test set"
+echo "    hpa-run           — submit full pipeline via SLURM"
 echo ""
 echo "  Utilities:"
 echo "    hpa-verify        — verify all deps are working"

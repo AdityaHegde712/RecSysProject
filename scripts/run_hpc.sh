@@ -252,9 +252,9 @@ run_preprocess() {
 # ─────────────────────────────────────────────────────────────────────
 train_rec() {
     echo ""
-    echo ">>> Training GMF (kcore=${KCORE})..."
-    python -m src.train --config configs/gmf.yaml --kcore "$KCORE"
-    echo "GMF training done."
+    echo ">>> Training ItemKNN (kcore=${KCORE})..."
+    python -m src.train --config configs/itemknn.yaml --kcore "$KCORE"
+    echo "ItemKNN training done."
 }
 
 # ─────────────────────────────────────────────────────────────────────
@@ -262,8 +262,8 @@ train_rec() {
 # ─────────────────────────────────────────────────────────────────────
 run_eval() {
     echo ""
-    echo ">>> Evaluating GMF (kcore=${KCORE})..."
-    python -m src.evaluate --config configs/gmf.yaml --kcore "$KCORE"
+    echo ">>> Evaluating ItemKNN (kcore=${KCORE})..."
+    python -m src.evaluate --config configs/itemknn.yaml --kcore "$KCORE"
     echo "Evaluation done."
 }
 
