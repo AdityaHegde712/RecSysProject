@@ -64,7 +64,8 @@ We use the **20-core** subset (users and items with >= 20 interactions each).
 │   ├── gmf.yaml                 # GMF hyperparameters
 │   ├── itemknn.yaml             # ItemKNN config
 │   ├── lightgcn.yaml            # LightGCN sweep config (K=3, dim=64)
-│   └── lightgcn_best.yaml       # LightGCN extended config (K=1, dim=128)
+│   ├── lightgcn_best.yaml       # LightGCN extended config (K=1, dim=128)
+│   └── lightgcn_best_v2.yaml    # LightGCN best config (K=1, dim=256, neg=2)
 │
 ├── scripts/                     # Utilities and HPC
 │   ├── explore_data.py          # Full dataset EDA (streaming, O(1) memory)
@@ -123,12 +124,12 @@ python -m src.run_baselines --kcore 20
 # 6. Train GMF (uses GPU if available, falls back to CPU)
 python -m src.train_gmf --config configs/gmf.yaml --kcore 20
 
-# 7. Train LightGCN (Hriday's variant; best config matches HR@10 = 0.736)
-python -m src.train_lightgcn --config configs/lightgcn_best.yaml --kcore 20
+# 7. Train LightGCN (Hriday's variant; best config hits HR@10 = 0.753)
+python -m src.train_lightgcn --config configs/lightgcn_best_v2.yaml --kcore 20
 
 # 8. Compute RMSE (baselines + calibrated LightGCN)
-python scripts/compute_rmse.py --kcore 20 --lightgcn-layers 1 --lightgcn-dim 128 \
-    --lightgcn-ckpt results/lightgcn/best_model_L1_d128.pt
+python scripts/compute_rmse.py --kcore 20 --lightgcn-layers 1 --lightgcn-dim 256 \
+    --lightgcn-ckpt results/lightgcn/best_model_L1_d256.pt
 ```
 
 ---
@@ -152,8 +153,8 @@ Following He et al. (2017):
 |-------|------|-------|-------|--------|---------|---------|
 | Popularity | 0.3150 | 0.4215 | 0.5538 | 0.2318 | 0.2662 | 0.2995 |
 | GMF | 0.5553 | 0.6685 | 0.7936 | 0.4498 | 0.4863 | 0.5179 |
-| ItemKNN | 0.6835 | 0.6870 | 0.7091 | 0.6082 | 0.6093 | 0.6150 |
-| **LightGCN** (K=1, dim=128) | **0.6135** | **0.7364** | **0.8538** | **0.4985** | **0.5383** | **0.5681** |
+| ItemKNN | **0.6835** | 0.6870 | 0.7091 | **0.6082** | **0.6093** | **0.6150** |
+| **LightGCN** (K=1, dim=256) | 0.6400 | **0.7530** | **0.8615** | 0.5305 | 0.5670 | 0.5945 |
 
 **Rating-prediction metrics** (lower is better):
 
@@ -162,7 +163,7 @@ Following He et al. (2017):
 | GlobalMean (sanity) | 0.9315 | 0.7048 |
 | Popularity (item mean) | **0.8685** | **0.6749** |
 | ItemKNN (weighted neighbors) | 0.9703 | 0.7162 |
-| LightGCN (calibrated) | 0.9311 | 0.7022 |
+| LightGCN (calibrated) | 0.9312 | 0.7024 |
 
 > The ranking protocol (1-vs-99, HR@k / NDCG@k) is the primary comparison since
 > all models are trained with BPR-style ranking objectives. RMSE/MAE are

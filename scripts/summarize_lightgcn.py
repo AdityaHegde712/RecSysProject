@@ -159,14 +159,15 @@ def main() -> None:
                 f"b={fmt(rating_lg.get('calibration_b'), p=4)}) |"
             )
         lines.append("")
+        cal_a = rating_lg.get("calibration_a", 0.0) if rating_lg else 0.0
         lines.append(
             "**Interpretation**: Popularity wins RMSE because 78% of HotelRec "
             "ratings are 4-5 stars and the item-level mean captures most of the "
             "variance. ItemKNN's weighted neighbor formula tends to overshoot "
             "toward each item's own mean, losing user personalization at the "
-            "rating level. LightGCN's calibration slope is near zero "
-            "(`a = 0.0013`), confirming that BPR-trained embeddings do not "
-            "carry calibrated rating information -- they are pure relevance "
+            f"rating level. LightGCN's calibration slope is near zero "
+            f"(`a = {fmt(cal_a)}`), confirming that BPR-trained embeddings do "
+            "not carry calibrated rating information -- they are pure relevance "
             "scorers. This is expected and is why the shared evaluation framework "
             "uses ranking metrics as the primary comparison.\n"
         )

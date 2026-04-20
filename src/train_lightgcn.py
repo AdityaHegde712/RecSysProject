@@ -137,7 +137,9 @@ def train(config, kcore_dir: str, num_users: int, num_items: int, layers_overrid
 
     log_dir = paths.get("log_dir", "logs/lightgcn")
     ckpt_dir = paths.get("checkpoint_dir", "results/lightgcn")
-    logger = MetricsLogger(log_dir, filename=f"metrics_L{num_layers}.csv")
+    # Distinctive suffix so sweep / extended / v2 runs don't overwrite each other.
+    run_suffix = f"L{num_layers}_d{embed_dim}"
+    logger = MetricsLogger(log_dir, filename=f"metrics_{run_suffix}.csv")
 
     k_values = eval_cfg.get("top_k", [5, 10, 20])
     track_key = f"HR@{k_values[1] if len(k_values) > 1 else k_values[0]}"
@@ -180,7 +182,7 @@ def train(config, kcore_dir: str, num_users: int, num_items: int, layers_overrid
                 model,
                 optimizer,
                 epoch,
-                os.path.join(ckpt_dir, f"best_model_L{num_layers}.pt"),
+                os.path.join(ckpt_dir, f"best_model_{run_suffix}.pt"),
             )
             marker = " *"
         else:
@@ -196,7 +198,7 @@ def train(config, kcore_dir: str, num_users: int, num_items: int, layers_overrid
             break
 
     # Final test eval using best checkpoint.
-    best_path = os.path.join(ckpt_dir, f"best_model_L{num_layers}.pt")
+    best_path = os.path.join(ckpt_dir, f"best_model_{run_suffix}.pt")
     if os.path.exists(best_path):
         from src.utils.io import load_checkpoint
         model, _ = load_checkpoint(best_path, model)
@@ -222,7 +224,7 @@ def train(config, kcore_dir: str, num_users: int, num_items: int, layers_overrid
 
     # Save test metrics as JSON.
     Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
-    out_path = os.path.join(ckpt_dir, f"test_metrics_L{num_layers}.json")
+    out_path = os.path.join(ckpt_dir, f"test_metrics_{run_suffix}.json")
     with open(out_path, "w") as f:
         json.dump(test_metrics, f, indent=2)
     print(f"  saved: {out_path}")

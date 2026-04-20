@@ -1,0 +1,41 @@
+# LightGCN — sharpening v2 config (close NDCG@k gap vs ItemKNN).
+#
+# Changes vs lightgcn_best.yaml (HR@10=0.7364, NDCG@10=0.5383):
+#   - embedding_dim: 256 (up from 128)   - more capacity for precise top-1
+#   - num_negatives: 2 (up from 1)        - steeper BPR margin
+#   - bpr_reg: 1.0e-5 (down from 1e-4)   - let embeddings sharpen
+#   - epochs: 80 (up from 60), patience: 15
+#   - batch_size: 8192 (up from 4096)    - offsets num_negatives=2 cost
+#
+# Intent: trade broad-spread rankings for more concentrated top-1/top-5
+# placement, attacking the NDCG@k losses to ItemKNN.
+
+model:
+  name: lightgcn
+  embedding_dim: 256
+  num_layers: 1
+
+training:
+  epochs: 80
+  batch_size: 8192
+  lr: 1.0e-3
+  optimizer: adam
+  weight_decay: 0.0
+  bpr_reg: 1.0e-5
+  patience: 15
+
+scheduler:
+  type: cosine
+  min_lr: 1.0e-5
+
+negative_sampling:
+  num_negatives: 2
+
+evaluation:
+  top_k: [5, 10, 20]
+  metrics: [hr, ndcg]
+  num_negatives: 99
+
+paths:
+  checkpoint_dir: results/lightgcn
+  log_dir: logs/lightgcn
