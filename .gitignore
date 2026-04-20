@@ -17,10 +17,11 @@ venv/
 data/raw/
 data/processed/
 
-# Outputs (keep evaluation JSONs, ignore model checkpoints and logs)
+# Outputs (keep evaluation JSONs / summaries, ignore model checkpoints & logs)
 results/*
 !results/data_evaluation.json
 !results/baselines/
+!results/lightgcn/
 logs/
 checkpoints/
 

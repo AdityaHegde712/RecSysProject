@@ -1,0 +1,32 @@
+# LightGCN (He et al., SIGIR 2020)
+# https://arxiv.org/abs/2002.02126
+
+model:
+  name: lightgcn
+  embedding_dim: 64
+  num_layers: 3            # K in the paper; 3 is the default recommendation
+
+training:
+  epochs: 30
+  batch_size: 2048
+  lr: 1.0e-3
+  optimizer: adam
+  weight_decay: 0.0
+  bpr_reg: 1.0e-4          # L2 reg on layer-0 embeddings (LightGCN paper: 1e-4)
+  patience: 5
+
+scheduler:
+  type: cosine
+  min_lr: 1.0e-5
+
+negative_sampling:
+  num_negatives: 1         # 1 neg per positive (standard for BPR + LightGCN)
+
+evaluation:
+  top_k: [5, 10, 20]
+  metrics: [hr, ndcg]
+  num_negatives: 99        # 1-vs-99 protocol matches baselines
+
+paths:
+  checkpoint_dir: results/lightgcn
+  log_dir: logs/lightgcn

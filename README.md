@@ -40,16 +40,19 @@ We use the **20-core** subset (users and items with >= 20 interactions each).
 │   ├── models/
 │   │   ├── knn.py               # ItemKNN (cosine similarity, scipy sparse)
 │   │   ├── gmf.py               # Generalized Matrix Factorization (PyTorch)
+│   │   ├── lightgcn.py          # LightGCN (graph CF, day 10)
 │   │   ├── popularity.py        # Global popularity baseline
 │   │   └── common.py            # Model factory (build_model)
 │   ├── evaluation/
-│   │   └── ranking.py           # HR@k, NDCG@k (leave-one-out, 1+99 negatives)
+│   │   ├── ranking.py           # HR@k, NDCG@k (leave-one-out, 1+99 negatives)
+│   │   └── rating.py            # RMSE / MAE + score->rating calibration (day 10)
 │   ├── utils/
 │   │   ├── io.py                # Config, checkpoint, pickle save/load
 │   │   ├── seed.py              # Reproducibility
 │   │   └── metrics_logger.py    # CSV logging
 │   ├── run_baselines.py         # Run Popularity + ItemKNN, save results
-│   └── train_gmf.py             # Train GMF with BPR loss
+│   ├── train_gmf.py             # Train GMF with BPR loss
+│   └── train_lightgcn.py        # Train LightGCN with BPR loss (day 10)
 │
 ├── variants/                    # Phase 2: one folder per team member
 │   ├── hriday/                  # LightGCN (graph-based CF)
@@ -59,13 +62,17 @@ We use the **20-core** subset (users and items with >= 20 interactions each).
 ├── configs/
 │   ├── data.yaml                # Dataset paths, k-core, split ratios
 │   ├── gmf.yaml                 # GMF hyperparameters
-│   └── itemknn.yaml             # ItemKNN config
+│   ├── itemknn.yaml             # ItemKNN config
+│   ├── lightgcn.yaml            # LightGCN sweep config (K=3, dim=64)
+│   └── lightgcn_best.yaml       # LightGCN extended config (K=1, dim=128)
 │
 ├── scripts/                     # Utilities and HPC
 │   ├── explore_data.py          # Full dataset EDA (streaming, O(1) memory)
 │   ├── download_data.sh         # Dataset download helper
 │   ├── validate_pipeline.py     # Smoke test: fit + predict on synthetic data
 │   ├── verify_env.py            # Check all dependencies
+│   ├── compute_rmse.py          # RMSE/MAE on baselines + calibrated LightGCN
+│   ├── summarize_lightgcn.py    # Assemble results/lightgcn/summary.md
 │   ├── run_hpc.sh               # SLURM job script for SJSU HPC
 │   └── hpc_aliases.sh           # Shell shortcuts for HPC
 │
@@ -115,6 +122,13 @@ python -m src.run_baselines --kcore 20
 
 # 6. Train GMF (uses GPU if available, falls back to CPU)
 python -m src.train_gmf --config configs/gmf.yaml --kcore 20
+
+# 7. Train LightGCN (Hriday's variant; best config matches HR@10 = 0.736)
+python -m src.train_lightgcn --config configs/lightgcn_best.yaml --kcore 20
+
+# 8. Compute RMSE (baselines + calibrated LightGCN)
+python scripts/compute_rmse.py --kcore 20 --lightgcn-layers 1 --lightgcn-dim 128 \
+    --lightgcn-ckpt results/lightgcn/best_model_L1_d128.pt
 ```
 
 ---
@@ -130,13 +144,33 @@ Following He et al. (2017):
 
 ---
 
-## Baseline Results (20-core)
+## Results (20-core, 1-vs-99 test set)
+
+**Ranking metrics** (higher is better):
 
 | Model | HR@5 | HR@10 | HR@20 | NDCG@5 | NDCG@10 | NDCG@20 |
 |-------|------|-------|-------|--------|---------|---------|
 | Popularity | 0.3150 | 0.4215 | 0.5538 | 0.2318 | 0.2662 | 0.2995 |
 | GMF | 0.5553 | 0.6685 | 0.7936 | 0.4498 | 0.4863 | 0.5179 |
 | ItemKNN | 0.6835 | 0.6870 | 0.7091 | 0.6082 | 0.6093 | 0.6150 |
+| **LightGCN** (K=1, dim=128) | **0.6135** | **0.7364** | **0.8538** | **0.4985** | **0.5383** | **0.5681** |
+
+**Rating-prediction metrics** (lower is better):
+
+| Model | RMSE | MAE |
+|-------|------|-----|
+| GlobalMean (sanity) | 0.9315 | 0.7048 |
+| Popularity (item mean) | **0.8685** | **0.6749** |
+| ItemKNN (weighted neighbors) | 0.9703 | 0.7162 |
+| LightGCN (calibrated) | 0.9311 | 0.7022 |
+
+> The ranking protocol (1-vs-99, HR@k / NDCG@k) is the primary comparison since
+> all models are trained with BPR-style ranking objectives. RMSE/MAE are
+> included as a traditional secondary metric; Popularity (item-mean rating)
+> wins because HotelRec ratings are heavily skewed toward 4-5 stars.
+
+See [`results/lightgcn/summary.md`](results/lightgcn/summary.md) for the full
+LightGCN sweep and analysis.
 
 ---
 

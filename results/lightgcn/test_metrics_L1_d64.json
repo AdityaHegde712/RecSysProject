@@ -1,0 +1,14 @@
+{
+  "HR@5": 0.5584,
+  "HR@10": 0.6865,
+  "HR@20": 0.8205,
+  "NDCG@5": 0.4511,
+  "NDCG@10": 0.4925,
+  "NDCG@20": 0.5264,
+  "best_val_HR@10": 0.6860,
+  "best_epoch": 30,
+  "num_layers": 1,
+  "embed_dim": 64,
+  "total_train_time_s": 800.37,
+  "note": "dim=64 sweep run; reconstructed from training log because test_metrics_L1.json was overwritten by the dim=128 follow-up run"
+}
