@@ -1,17 +1,17 @@
 """
 Rating prediction evaluation (RMSE, MAE) on the test set.
 
-This complements the ranking metrics (HR@k, NDCG@k) with a traditional
-explicit-feedback metric, as suggested by the instructor.
+Complements the ranking metrics (HR@k, NDCG@k) with a traditional
+explicit-feedback metric.
 
 Supported models:
   * Any model with a `predict_rating(user_id, item_id)` method. ItemKNN and
     Popularity implement this naturally.
-  * For ranking-only neural models (GMF, LightGCN, TextNCF), we provide an
-    optional `calibrate_scores_to_ratings()` helper that fits a linear
-    regression score -> rating on the validation set, producing calibrated
-    predictions so RMSE is computed on a consistent scale. This is reported
-    as a secondary number and clearly labelled "calibrated" in outputs.
+  * For ranking-only neural models (GMF, LightGCN, TextNCF),
+    `calibrate_scores_to_ratings()` fits a linear regression score -> rating
+    on the validation set, producing calibrated predictions so RMSE is
+    computed on a consistent scale. The result is reported as a secondary
+    number and labelled "calibrated" in outputs.
 """
 
 import math

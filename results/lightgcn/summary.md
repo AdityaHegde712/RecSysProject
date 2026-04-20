@@ -31,6 +31,18 @@
 
 *LightGCN improves HR@10 over ItemKNN by **+9.6%** relative.*
 
+## Ensemble: LightGCN + ItemKNN
+
+Per-user min-max normalization then linear combination `w * LightGCN + (1 - w) * ItemKNN`, with `w` tuned on the validation split. Best `w = 0.90`.
+
+| Config | HR@5 | HR@10 | HR@20 | NDCG@5 | NDCG@10 | NDCG@20 |
+|---|---|---|---|---|---|---|
+| ItemKNN (w=0) | 0.6835 | 0.6870 | 0.7091 | 0.6082 | 0.6093 | 0.6150 |
+| LightGCN (w=1) | 0.6400 | 0.7530 | 0.8615 | 0.5305 | 0.5670 | 0.5945 |
+| **Ensemble (w=0.90)** | **0.6434** | **0.7547** | **0.8623** | **0.5354** | **0.5714** | **0.5986** |
+
+The ensemble improves every metric over pure LightGCN, but the magnitude is small (typically +0.001 to +0.005). The 10% ItemKNN weight is not enough to recover ItemKNN's top-1 concentration (NDCG@5 = 0.535 vs ItemKNN's 0.608), so the result is a modest refinement rather than a transformative combination. LightGCN already captures most of the exploitable collaborative signal on the 20-core graph.
+
 ## Rating-prediction comparison (test RMSE / MAE)
 
 RMSE and MAE on the held-out test set. Lower is better. Note that ItemKNN and Popularity predict ratings natively (weighted neighbor ratings / item mean rating), while LightGCN is trained with BPR (pure ranking loss) -- its RMSE is via linear calibration `rating = a*score + b` fit on the validation split.
@@ -39,7 +51,7 @@ RMSE and MAE on the held-out test set. Lower is better. Note that ItemKNN and Po
 |---|---|---|---|
 | GlobalMean | 0.9315 | 0.7048 | constant prediction, sanity baseline |
 | Popularity | 0.8685 | 0.6749 | item-level mean rating from training |
-| ItemKNN | 0.9703 | 0.7162 | weighted mean over top-50 neighbor ratings (dedup train) |
+| ItemKNN | 0.9590 | 0.7094 | weighted mean over top-20 neighbor ratings (dedup train) |
 | LightGCN (K=1, dim=256) | 0.9312 | 0.7024 | calibrated (a=0.0009, b=4.0649) |
 
 **Interpretation**: Popularity wins RMSE because 78% of HotelRec ratings are 4-5 stars and the item-level mean captures most of the variance. ItemKNN's weighted neighbor formula tends to overshoot toward each item's own mean, losing user personalization at the rating level. LightGCN's calibration slope is near zero (`a = 0.0009`), confirming that BPR-trained embeddings do not carry calibrated rating information -- they are pure relevance scorers. This is expected and is why the shared evaluation framework uses ranking metrics as the primary comparison.

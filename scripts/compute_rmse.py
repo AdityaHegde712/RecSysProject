@@ -118,6 +118,9 @@ def main():
     parser.add_argument("--lightgcn-dim", type=int, default=64)
     parser.add_argument("--lightgcn-ckpt", default=None,
                         help="Override LightGCN checkpoint path")
+    parser.add_argument("--knn-k", type=int, default=20,
+                        help="k_neighbors for ItemKNN rating predictor (default 20, "
+                             "matches the shipped baselines JSON)")
     args = parser.parse_args()
 
     kcore_dir = os.path.join(args.data_dir, f"{args.kcore}core")
@@ -162,7 +165,7 @@ def main():
     # duplicate ratings via scipy CSR, which is harmless for ranking (relative
     # order is preserved) but produces inflated rating predictions. For RMSE
     # only, we dedupe by taking the mean rating per (user, item) pair.
-    k_neighbors = 50   # matches configs/itemknn.yaml
+    k_neighbors = args.knn_k
     print(f"Fitting ItemKNN(k={k_neighbors}) on deduplicated train (mean per u,i)...")
     train_dedup = (train_df.groupby(["user_id", "item_id"], as_index=False)
                           ["rating"].mean())

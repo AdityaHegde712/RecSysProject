@@ -101,7 +101,7 @@ and additional propagation layers dilute user-specific preferences.
 
 The v2 config (dim=256, num_negatives=2, reg=1e-5) was designed to close the
 NDCG@k gap with ItemKNN. It picked up +0.027 on HR@5, +0.032 on NDCG@5, and
-+0.029 on NDCG@10 -- roughly half of the remaining gap to ItemKNN.
++0.029 on NDCG@10 -- roughly a third of the remaining gap.
 
 **vs. Phase-1 baselines (best LightGCN = K=1, dim=256)**:
 
@@ -109,15 +109,34 @@ NDCG@k gap with ItemKNN. It picked up +0.027 on HR@5, +0.032 on NDCG@5, and
 |---|---|---|---|---|---|---|
 | Popularity | 0.3150 | 0.4215 | 0.5538 | 0.2318 | 0.2662 | 0.2995 |
 | GMF | 0.5553 | 0.6685 | 0.7936 | 0.4498 | 0.4863 | 0.5179 |
-| ItemKNN (k=50) | **0.6835** | 0.6870 | 0.7091 | **0.6082** | **0.6093** | **0.6150** |
+| ItemKNN (k=20) | **0.6835** | 0.6870 | 0.7091 | **0.6082** | **0.6093** | **0.6150** |
 | **LightGCN (K=1, dim=256)** | 0.6400 | **0.7530** | **0.8615** | 0.5305 | 0.5670 | 0.5945 |
 
 LightGCN beats every baseline on HR@10, HR@20, and all long-list NDCG metrics.
 ItemKNN remains better at top-1/top-5 placement because its rating-weighted
-sparse cosine concentrates hits at positions 1-3 (ItemKNN's NDCG is nearly flat:
-0.608 / 0.609 / 0.615 from @5 to @20), whereas LightGCN spreads hits across
-positions 1-20, which is why its long-list recall (HR@20=0.86) is dramatically
-higher (ItemKNN is at 0.71).
+sparse cosine concentrates hits at positions 1-3 (ItemKNN's NDCG curve is nearly
+flat: 0.608 / 0.609 / 0.615 from @5 to @20), whereas LightGCN spreads hits
+across positions 1-20, which is why its long-list recall (HR@20=0.86) is
+dramatically higher (ItemKNN is at 0.71).
+
+**Ensemble with ItemKNN (linear score combination)**:
+
+A simple score ensemble `w · LightGCN + (1-w) · ItemKNN`, with per-user
+min-max normalization and `w` tuned on the validation split, was evaluated
+to test whether the two models' inductive biases combine usefully. Best
+validation `w = 0.9`.
+
+| Config | HR@5 | HR@10 | HR@20 | NDCG@5 | NDCG@10 | NDCG@20 |
+|---|---|---|---|---|---|---|
+| LightGCN (w=1) | 0.6400 | 0.7530 | 0.8615 | 0.5305 | 0.5670 | 0.5945 |
+| **Ensemble (w=0.9)** | **0.6434** | **0.7547** | **0.8623** | **0.5354** | **0.5714** | **0.5986** |
+
+The ensemble improves every metric over pure LightGCN, but the deltas are
+small (+0.0008 to +0.0049). The 10% ItemKNN weight is not enough to recover
+ItemKNN's top-1 concentration (NDCG@5 stays at 0.535 vs ItemKNN's 0.608), so
+the ensemble is a modest refinement rather than a transformative improvement.
+This is consistent with the interpretation that LightGCN is already capturing
+most of the exploitable collaborative signal in the 20-core graph.
 
 **Rating prediction (RMSE / MAE, traditional metric)**:
 
@@ -125,7 +144,7 @@ higher (ItemKNN is at 0.71).
 |---|---|---|
 | GlobalMean (sanity) | 0.9315 | 0.7048 |
 | **Popularity** (item mean) | **0.8685** | **0.6749** |
-| ItemKNN | 0.9703 | 0.7162 |
+| ItemKNN (k=20) | 0.9590 | 0.7094 |
 | LightGCN (calibrated) | 0.9312 | 0.7024 |
 
 Popularity wins RMSE because HotelRec ratings are dominated by 4-5 stars (78%)
@@ -137,7 +156,7 @@ See `results/lightgcn/summary.md` for a full writeup.
 ## Reproducing the results
 
 ```bash
-# Build the junction-linked 20-core data (or re-run preprocess)
+# Build the 20-core data
 python -m src.data.preprocess --kcore 20
 python -m src.data.split --kcore 20
 
@@ -152,6 +171,11 @@ python -m src.train_lightgcn --config configs/lightgcn_best_v2.yaml --kcore 20
 # RMSE (baselines + calibrated LightGCN)
 python scripts/compute_rmse.py --kcore 20 --lightgcn-layers 1 --lightgcn-dim 256 \
     --lightgcn-ckpt results/lightgcn/best_model_L1_d256.pt
+
+# Ensemble with ItemKNN (sweeps w on val, evaluates on test)
+python scripts/ensemble_eval.py --kcore 20 \
+    --lightgcn-layers 1 --lightgcn-dim 256 \
+    --lightgcn-ckpt results/lightgcn/best_model_L1_d256.pt --knn-k 20
 
 # Regenerate summary markdown
 python scripts/summarize_lightgcn.py

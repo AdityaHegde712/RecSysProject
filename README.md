@@ -40,19 +40,19 @@ We use the **20-core** subset (users and items with >= 20 interactions each).
 │   ├── models/
 │   │   ├── knn.py               # ItemKNN (cosine similarity, scipy sparse)
 │   │   ├── gmf.py               # Generalized Matrix Factorization (PyTorch)
-│   │   ├── lightgcn.py          # LightGCN (graph CF, day 10)
+│   │   ├── lightgcn.py          # LightGCN (graph-based CF)
 │   │   ├── popularity.py        # Global popularity baseline
 │   │   └── common.py            # Model factory (build_model)
 │   ├── evaluation/
 │   │   ├── ranking.py           # HR@k, NDCG@k (leave-one-out, 1+99 negatives)
-│   │   └── rating.py            # RMSE / MAE + score->rating calibration (day 10)
+│   │   └── rating.py            # RMSE / MAE + score->rating calibration
 │   ├── utils/
 │   │   ├── io.py                # Config, checkpoint, pickle save/load
 │   │   ├── seed.py              # Reproducibility
 │   │   └── metrics_logger.py    # CSV logging
 │   ├── run_baselines.py         # Run Popularity + ItemKNN, save results
 │   ├── train_gmf.py             # Train GMF with BPR loss
-│   └── train_lightgcn.py        # Train LightGCN with BPR loss (day 10)
+│   └── train_lightgcn.py        # Train LightGCN with BPR loss
 │
 ├── variants/                    # Phase 2: one folder per team member
 │   ├── hriday/                  # LightGCN (graph-based CF)
@@ -73,6 +73,7 @@ We use the **20-core** subset (users and items with >= 20 interactions each).
 │   ├── validate_pipeline.py     # Smoke test: fit + predict on synthetic data
 │   ├── verify_env.py            # Check all dependencies
 │   ├── compute_rmse.py          # RMSE/MAE on baselines + calibrated LightGCN
+│   ├── ensemble_eval.py         # LightGCN + ItemKNN score ensemble sweep
 │   ├── summarize_lightgcn.py    # Assemble results/lightgcn/summary.md
 │   ├── run_hpc.sh               # SLURM job script for SJSU HPC
 │   └── hpc_aliases.sh           # Shell shortcuts for HPC
@@ -153,8 +154,9 @@ Following He et al. (2017):
 |-------|------|-------|-------|--------|---------|---------|
 | Popularity | 0.3150 | 0.4215 | 0.5538 | 0.2318 | 0.2662 | 0.2995 |
 | GMF | 0.5553 | 0.6685 | 0.7936 | 0.4498 | 0.4863 | 0.5179 |
-| ItemKNN | **0.6835** | 0.6870 | 0.7091 | **0.6082** | **0.6093** | **0.6150** |
-| **LightGCN** (K=1, dim=256) | 0.6400 | **0.7530** | **0.8615** | 0.5305 | 0.5670 | 0.5945 |
+| ItemKNN (k=20) | **0.6835** | 0.6870 | 0.7091 | **0.6082** | **0.6093** | **0.6150** |
+| LightGCN (K=1, dim=256) | 0.6400 | 0.7530 | 0.8615 | 0.5305 | 0.5670 | 0.5945 |
+| **LightGCN + ItemKNN ensemble** (w=0.9) | 0.6434 | **0.7547** | **0.8623** | 0.5354 | **0.5714** | **0.5986** |
 
 **Rating-prediction metrics** (lower is better):
 
@@ -162,7 +164,7 @@ Following He et al. (2017):
 |-------|------|-----|
 | GlobalMean (sanity) | 0.9315 | 0.7048 |
 | Popularity (item mean) | **0.8685** | **0.6749** |
-| ItemKNN (weighted neighbors) | 0.9703 | 0.7162 |
+| ItemKNN (k=20, weighted neighbors) | 0.9590 | 0.7094 |
 | LightGCN (calibrated) | 0.9312 | 0.7024 |
 
 > The ranking protocol (1-vs-99, HR@k / NDCG@k) is the primary comparison since
