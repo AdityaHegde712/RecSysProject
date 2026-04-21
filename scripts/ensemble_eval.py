@@ -39,6 +39,11 @@ from tqdm import tqdm
 
 from src.data.dataset import get_dataloaders, get_n_users_items, load_split
 from src.evaluation.ranking import hit_ratio, ndcg
+from src.evaluation.rating import (
+    calibrate_scores_to_ratings,
+    mae_from_predictions,
+    rmse_from_predictions,
+)
 from src.models.knn import ItemKNN
 from src.models.lightgcn import LightGCN, build_norm_adj
 from src.utils.io import load_checkpoint
@@ -264,6 +269,76 @@ def main():
         for k in ("HR@5", "HR@10", "HR@20", "NDCG@5", "NDCG@10", "NDCG@20"):
             print(f"  {k}: {m[k]:.4f}")
 
+    # ---- Ensemble rating prediction (RMSE / MAE) ----
+    # The ensemble ranks by a linear combination of scores. For a rating
+    # prediction, use the analogous combination of per-model rating predictions:
+    #   r_hat(u, i) = w * r_lgcn_calibrated(u, i) + (1 - w) * r_knn_native(u, i)
+    # where LightGCN uses linear calibration on the val split (same as
+    # compute_rmse.py) and ItemKNN uses the deduplicated weighted-neighbor
+    # rating (also matching compute_rmse.py).
+    print("\nComputing ensemble RMSE...")
+    # Deduplicate train for ItemKNN rating predictor (sum vs mean bug fix).
+    train_dedup = (train_df.groupby(["user_id", "item_id"], as_index=False)
+                          ["rating"].mean())
+    knn_rating = ItemKNN(k=args.knn_k, n_users=n_users, n_items=n_items)
+    knn_rating.fit(train_dedup, n_users=n_users, n_items=n_items)
+
+    test_df = load_split(kcore_dir, "test")
+    val_df = load_split(kcore_dir, "val")
+    test_u = test_df["user_id"].astype(np.int64).values
+    test_i = test_df["item_id"].astype(np.int64).values
+    test_y = test_df["rating"].astype(np.float32).values
+
+    global_mean = float(train_df["rating"].mean())
+
+    # LightGCN calibrated rating predictions on test.
+    lgcn_predict_rating = calibrate_scores_to_ratings(lgcn, val_df, device=device)
+    lgcn_test_ratings = lgcn_predict_rating(test_u, test_i)
+    a_cal = float(lgcn_predict_rating.coef_a)
+    b_cal = float(lgcn_predict_rating.coef_b)
+
+    # ItemKNN native rating predictions on test (weighted neighbor mean).
+    sim = knn_rating.sim
+    user_item = knn_rating.user_item
+    binary_ui = (user_item > 0).astype(np.float32)
+    knn_test_ratings = np.empty(len(test_u), dtype=np.float32)
+    for k_idx in range(len(test_u)):
+        u = int(test_u[k_idx]); i = int(test_i[k_idx])
+        if u >= n_users or i >= n_items:
+            knn_test_ratings[k_idx] = global_mean
+            continue
+        sim_i = sim.getrow(i)
+        ui_u = user_item.getrow(u)
+        bi_u = binary_ui.getrow(u)
+        num = sim_i.multiply(ui_u).sum()
+        den = sim_i.multiply(bi_u).sum()
+        knn_test_ratings[k_idx] = (num / den) if den > 0 else global_mean
+    knn_test_ratings = np.clip(knn_test_ratings, 1.0, 5.0)
+
+    # Weighted combination at best_w.
+    ensemble_ratings = best_w * lgcn_test_ratings + (1.0 - best_w) * knn_test_ratings
+    ensemble_ratings = np.clip(ensemble_ratings, 1.0, 5.0)
+
+    rating_results = {
+        "lightgcn_calibrated": {
+            "rmse": rmse_from_predictions(lgcn_test_ratings, test_y),
+            "mae": mae_from_predictions(lgcn_test_ratings, test_y),
+            "calibration_a": a_cal,
+            "calibration_b": b_cal,
+        },
+        "itemknn_native": {
+            "rmse": rmse_from_predictions(knn_test_ratings, test_y),
+            "mae": mae_from_predictions(knn_test_ratings, test_y),
+        },
+        f"ensemble (w={best_w:.3f})": {
+            "rmse": rmse_from_predictions(ensemble_ratings, test_y),
+            "mae": mae_from_predictions(ensemble_ratings, test_y),
+            "w": float(best_w),
+        },
+    }
+    for name, m in rating_results.items():
+        print(f"  {name}: RMSE={m['rmse']:.4f}  MAE={m['mae']:.4f}")
+
     # ---- Save ----
     Path(args.out_dir).mkdir(parents=True, exist_ok=True)
     out_path = os.path.join(args.out_dir, "ensemble_test_metrics.json")
@@ -271,6 +346,7 @@ def main():
         "ensemble_best_w": best_w,
         "val_HR@10_at_best_w": best["val_hr10"],
         "test_metrics": results,
+        "test_rating_metrics": rating_results,
         "val_sweep": sweep_log,
         "config": {
             "lightgcn_layers": args.lightgcn_layers,

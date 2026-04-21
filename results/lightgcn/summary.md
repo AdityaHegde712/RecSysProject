@@ -52,7 +52,9 @@ RMSE and MAE on the held-out test set. Lower is better. Note that ItemKNN and Po
 | GlobalMean | 0.9315 | 0.7048 | constant prediction, sanity baseline |
 | Popularity | 0.8685 | 0.6749 | item-level mean rating from training |
 | ItemKNN | 0.9590 | 0.7094 | weighted mean over top-20 neighbor ratings (dedup train) |
+| GMF (dim=64) | 0.9302 | 0.7002 | calibrated (a=0.1113, b=4.0276) |
 | LightGCN (K=1, dim=256) | 0.9312 | 0.7024 | calibrated (a=0.0009, b=4.0649) |
+| LightGCN + ItemKNN ensemble (w=0.90) | **0.9278** | **0.7004** | weighted combo of LightGCN-calibrated + ItemKNN-native rating preds |
 
 **Interpretation**: Popularity wins RMSE because 78% of HotelRec ratings are 4-5 stars and the item-level mean captures most of the variance. ItemKNN's weighted neighbor formula tends to overshoot toward each item's own mean, losing user personalization at the rating level. LightGCN's calibration slope is near zero (`a = 0.0009`), confirming that BPR-trained embeddings do not carry calibrated rating information -- they are pure relevance scorers. This is expected and is why the shared evaluation framework uses ranking metrics as the primary comparison.
 

@@ -165,7 +165,9 @@ Following He et al. (2017):
 | GlobalMean (sanity) | 0.9315 | 0.7048 |
 | Popularity (item mean) | **0.8685** | **0.6749** |
 | ItemKNN (k=20, weighted neighbors) | 0.9590 | 0.7094 |
+| GMF (calibrated) | 0.9302 | 0.7002 |
 | LightGCN (calibrated) | 0.9312 | 0.7024 |
+| LightGCN + ItemKNN ensemble (w=0.9) | 0.9278 | 0.7004 |
 
 > The ranking protocol (1-vs-99, HR@k / NDCG@k) is the primary comparison since
 > all models are trained with BPR-style ranking objectives. RMSE/MAE are

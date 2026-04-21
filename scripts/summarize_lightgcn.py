@@ -21,6 +21,7 @@ RESULTS = Path("results/lightgcn")
 BASELINES = Path("results/baselines/baseline_results_20core.json")
 RATING_BASELINES = Path("results/baselines/rating_metrics_20core.json")
 RATING_LIGHTGCN = Path("results/lightgcn/rating_metrics_L1.json")
+RATING_GMF = Path("results/gmf/rating_metrics.json")
 ENSEMBLE = Path("results/lightgcn/ensemble_test_metrics.json")
 OUT = RESULTS / "summary.md"
 
@@ -64,6 +65,7 @@ def main() -> None:
     baselines = load_json(BASELINES)
     rating_baselines = load_json(RATING_BASELINES)
     rating_lg = load_json(RATING_LIGHTGCN)
+    rating_gmf = load_json(RATING_GMF)
     ensemble = load_json(ENSEMBLE)
 
     lines = []
@@ -196,6 +198,14 @@ def main() -> None:
                 "ItemKNN":    f"weighted mean over top-{k_knn} neighbor ratings (dedup train)",
             }.get(name, "")
             lines.append(f"| {name} | {fmt(m.get('rmse'))} | {fmt(m.get('mae'))} | {note} |")
+        if rating_gmf:
+            lines.append(
+                f"| GMF (dim={rating_gmf.get('embed_dim','?')}) "
+                f"| {fmt(rating_gmf.get('rmse_calibrated'))} "
+                f"| {fmt(rating_gmf.get('mae_calibrated'))} "
+                f"| calibrated (a={fmt(rating_gmf.get('calibration_a'), p=4)}, "
+                f"b={fmt(rating_gmf.get('calibration_b'), p=4)}) |"
+            )
         if rating_lg:
             lines.append(
                 f"| LightGCN (K={rating_lg.get('num_layers','?')}, dim={rating_lg.get('embed_dim','?')}) "
@@ -204,6 +214,17 @@ def main() -> None:
                 f"| calibrated (a={fmt(rating_lg.get('calibration_a'), p=4)}, "
                 f"b={fmt(rating_lg.get('calibration_b'), p=4)}) |"
             )
+        # Ensemble rating (from ensemble_eval.py's test_rating_metrics)
+        if ensemble and "test_rating_metrics" in ensemble:
+            rr = ensemble["test_rating_metrics"]
+            ens_key = next((k for k in rr if k.startswith("ensemble")), None)
+            if ens_key:
+                ens = rr[ens_key]
+                lines.append(
+                    f"| LightGCN + ItemKNN ensemble (w={ens.get('w',0):.2f}) "
+                    f"| **{fmt(ens.get('rmse'))}** | **{fmt(ens.get('mae'))}** "
+                    f"| weighted combo of LightGCN-calibrated + ItemKNN-native rating preds |"
+                )
         lines.append("")
         cal_a = rating_lg.get("calibration_a", 0.0) if rating_lg else 0.0
         lines.append(

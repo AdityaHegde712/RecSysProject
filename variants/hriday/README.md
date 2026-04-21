@@ -145,7 +145,9 @@ most of the exploitable collaborative signal in the 20-core graph.
 | GlobalMean (sanity) | 0.9315 | 0.7048 |
 | **Popularity** (item mean) | **0.8685** | **0.6749** |
 | ItemKNN (k=20) | 0.9590 | 0.7094 |
+| GMF (calibrated) | 0.9302 | 0.7002 |
 | LightGCN (calibrated) | 0.9312 | 0.7024 |
+| LightGCN + ItemKNN ensemble (w=0.9) | 0.9278 | 0.7004 |
 
 Popularity wins RMSE because HotelRec ratings are dominated by 4-5 stars (78%)
 so the item-level mean already captures most of the rating variance.

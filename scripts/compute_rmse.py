@@ -121,6 +121,11 @@ def main():
     parser.add_argument("--knn-k", type=int, default=20,
                         help="k_neighbors for ItemKNN rating predictor (default 20, "
                              "matches the shipped baselines JSON)")
+    parser.add_argument("--gmf-ckpt", default=None,
+                        help="Path to a GMF checkpoint; if given, compute GMF's "
+                             "calibrated RMSE. Default None skips GMF.")
+    parser.add_argument("--gmf-dim", type=int, default=64,
+                        help="GMF embedding dim (must match the checkpoint)")
     args = parser.parse_args()
 
     kcore_dir = os.path.join(args.data_dir, f"{args.kcore}core")
@@ -236,6 +241,37 @@ def main():
               f"RMSE={cal['rmse_calibrated']:.4f}  MAE={cal['mae_calibrated']:.4f}  "
               f"(a={cal['calibration_a']:.4f}, b={cal['calibration_b']:.4f})")
         print(f"Saved: {out_lg}")
+
+    # ---- GMF (calibrated score -> rating) ----
+    if args.gmf_ckpt is not None:
+        print()
+        print(f"Computing calibrated RMSE for GMF...")
+        from src.models.gmf import GMF
+        from src.utils.io import load_checkpoint
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        try:
+            torch.zeros(1, device=device)
+        except Exception:
+            device = "cpu"
+
+        gmf = GMF(num_users=n_users, num_items=n_items, embed_dim=args.gmf_dim).to(device)
+        print(f"Loading checkpoint: {args.gmf_ckpt}")
+        gmf, _ = load_checkpoint(args.gmf_ckpt, gmf)
+        gmf = gmf.to(device)
+        gmf.eval()
+
+        cal = evaluate_rating_calibrated(gmf, val_df, test_df, device=device)
+        cal["embed_dim"] = args.gmf_dim
+        out_gmf_dir = "results/gmf"
+        Path(out_gmf_dir).mkdir(parents=True, exist_ok=True)
+        out_gmf = os.path.join(out_gmf_dir, "rating_metrics.json")
+        with open(out_gmf, "w") as f:
+            json.dump(cal, f, indent=2)
+        print(f"GMF calibrated: RMSE={cal['rmse_calibrated']:.4f}  "
+              f"MAE={cal['mae_calibrated']:.4f}  "
+              f"(a={cal['calibration_a']:.4f}, b={cal['calibration_b']:.4f})")
+        print(f"Saved: {out_gmf}")
 
 
 if __name__ == "__main__":
