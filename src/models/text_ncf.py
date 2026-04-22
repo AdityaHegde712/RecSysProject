@@ -11,7 +11,6 @@ Architecture:
     Text branch: proj(user_text) ⊙ proj(item_text)  →  (text_proj_dim,)
     Fusion:      concat → MLP → sigmoid → score
 
-Pramod Yadav — CMPE 256, Spring 2026
 """
 
 import torch

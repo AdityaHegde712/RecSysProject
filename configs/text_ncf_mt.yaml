@@ -1,5 +1,4 @@
 # Multi-Task TextNCF: joint ranking + rating prediction
-# Pramod Yadav — CMPE 256, Spring 2026
 #
 # Same architecture as TextNCF but with two output heads:
 #   - Ranking head (BPR loss)

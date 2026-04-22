@@ -8,7 +8,6 @@ These are stored in the interactions parquet alongside the overall rating.
 This module provides utilities to load and normalize sub-ratings for the
 sub-rating decomposition model.
 
-Pramod Yadav — CMPE 256, Spring 2026
 """
 
 import os

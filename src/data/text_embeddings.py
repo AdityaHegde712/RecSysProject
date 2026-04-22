@@ -8,7 +8,6 @@ To avoid data leakage:
   - user profiles use training-split reviews only
   - item profiles use all reviews (hotel metadata, not a target)
 
-Pramod Yadav — CMPE 256, Spring 2026
 """
 
 import os

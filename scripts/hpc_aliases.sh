@@ -54,6 +54,7 @@ alias hpc-ensemble='_hpc_activate && python -m src.evaluate_ensemble --kcore 20'
 alias hpc-two-stage='_hpc_activate && python -m src.evaluate_two_stage --kcore 20'
 alias hpc-run-ncf='sbatch scripts/run_hpc.sh text-ncf'
 alias hpc-run-all='sbatch scripts/run_hpc.sh run-all'
+alias hpc-run-sample='sbatch scripts/run_hpc.sh run-sample'
 
 # ─── Log viewing ─────────────────────────────────────────────────────
 alias lastlog='ls -t logs/slurm_*.out 2>/dev/null | head -1 | xargs tail -f'
@@ -99,6 +100,7 @@ echo "    hpc-ensemble      — ensemble scoring (TextNCF + GMF + ItemKNN)"
 echo "    hpc-two-stage     — two-stage retrieval (ItemKNN → TextNCF)"
 echo "    hpc-run-ncf       — submit TextNCF pipeline via SLURM"
 echo "    hpc-run-all       — submit baselines + TextNCF via SLURM"
+echo "    hpc-run-sample    — smoke test (2 epochs, all variants)"
 echo ""
 echo "  Utilities:"
 echo "    lastlog / lasterr — tail latest SLURM log"

@@ -13,7 +13,6 @@ Usage:
         --knn-ckpt results/baselines/itemknn.pkl \
         --kcore 20
 
-Pramod Yadav — CMPE 256, Spring 2026
 """
 
 import argparse

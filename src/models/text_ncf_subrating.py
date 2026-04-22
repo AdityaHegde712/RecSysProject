@@ -18,7 +18,6 @@ Architecture:
 Training:
     MSE on each sub-rating + BPR on the combined score.
 
-Pramod Yadav — CMPE 256, Spring 2026
 """
 
 import torch

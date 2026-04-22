@@ -1,5 +1,4 @@
 # Sub-Rating Decomposition TextNCF
-# Pramod Yadav — CMPE 256, Spring 2026
 #
 # Predicts 6 aspect-level sub-ratings (Service, Cleanliness, Location,
 # Value, Rooms, Sleep Quality) with learned per-user attention weights.

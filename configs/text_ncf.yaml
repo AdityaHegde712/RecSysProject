@@ -1,5 +1,4 @@
 # Review-text-enhanced Neural Collaborative Filtering (TextNCF)
-# Pramod Yadav — CMPE 256, Spring 2026
 #
 # Two-branch hybrid: GMF (collaborative) + text (sentence embeddings)
 # fused through a small MLP. Text embeddings are pre-computed offline

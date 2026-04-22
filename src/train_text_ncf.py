@@ -8,6 +8,8 @@ Usage:
 import argparse
 import json
 import os
+import shutil
+from datetime import datetime
 from pathlib import Path
 
 import torch
@@ -19,6 +21,21 @@ from src.models.text_ncf import TextNCF
 from src.utils.io import load_config, save_checkpoint
 from src.utils.metrics_logger import MetricsLogger
 from src.utils.seed import set_seed
+
+
+def _backup_previous_run(log_dir, ckpt_dir):
+    """Move existing metrics/checkpoints to timestamped backups so re-runs
+    don't append to stale CSV files or silently overwrite results."""
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    for path in [
+        os.path.join(log_dir, "metrics.csv"),
+        os.path.join(ckpt_dir, "test_metrics.json"),
+        os.path.join(ckpt_dir, "best_model.pt"),
+    ]:
+        if os.path.exists(path):
+            backup = f"{path}.{ts}.bak"
+            shutil.move(path, backup)
+            print(f"  backed up {path} → {backup}")
 
 
 def bpr_loss(model, users, pos_items, neg_items, device):
@@ -118,6 +135,7 @@ def train(config, kcore_dir, num_users, num_items):
 
     log_dir = paths.get("log_dir", "logs/text_ncf")
     ckpt_dir = paths.get("checkpoint_dir", "results/text_ncf")
+    _backup_previous_run(log_dir, ckpt_dir)
     logger = MetricsLogger(log_dir)
 
     k_values = eval_cfg.get("top_k", [5, 10, 20])
@@ -197,9 +215,17 @@ def main():
     parser = argparse.ArgumentParser(description="Train TextNCF")
     parser.add_argument("--config", required=True, help="YAML config path")
     parser.add_argument("--kcore", type=int, default=20)
+    parser.add_argument("--epochs", type=int, default=None,
+                        help="Override epochs from config (useful for smoke tests)")
     args = parser.parse_args()
 
     config = load_config(args.config)
+    if args.epochs is not None:
+        config.setdefault("training", {})["epochs"] = args.epochs
+        config["training"]["patience"] = min(
+            config["training"].get("patience", args.epochs), args.epochs)
+        print(f"[override] epochs={args.epochs}")
+
     set_seed(config.get("seed", 42))
 
     kcore_dir = os.path.join("data", "processed", f"{args.kcore}core")

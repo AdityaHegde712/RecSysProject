@@ -13,7 +13,6 @@ Architecture:
 
 Loss: alpha * BPR_loss + (1 - alpha) * MSE_loss
 
-Pramod Yadav — CMPE 256, Spring 2026
 """
 
 import torch

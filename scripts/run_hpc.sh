@@ -209,11 +209,41 @@ run_encode() {
 # ─────────────────────────────────────────────────────────────────────
 # STEP 4: Training — TextNCF variant
 # ─────────────────────────────────────────────────────────────────────
+EPOCH_FLAG=""  # set by run-sample to override epochs
+
 train_text_ncf() {
     echo ""
     echo ">>> Training TextNCF (kcore=${KCORE})..."
-    python -m src.train_text_ncf --config configs/text_ncf.yaml --kcore "$KCORE"
+    python -m src.train_text_ncf --config configs/text_ncf.yaml --kcore "$KCORE" $EPOCH_FLAG
     echo "TextNCF training done."
+}
+
+train_text_ncf_mt() {
+    echo ""
+    echo ">>> Training Multi-Task TextNCF (kcore=${KCORE})..."
+    python -m src.train_text_ncf_mt --config configs/text_ncf_mt.yaml --kcore "$KCORE" $EPOCH_FLAG
+    echo "Multi-Task TextNCF training done."
+}
+
+train_text_ncf_subrating() {
+    echo ""
+    echo ">>> Training Sub-Rating TextNCF (kcore=${KCORE})..."
+    python -m src.train_text_ncf_subrating --config configs/text_ncf_subrating.yaml --kcore "$KCORE" $EPOCH_FLAG
+    echo "Sub-Rating TextNCF training done."
+}
+
+run_ensemble() {
+    echo ""
+    echo ">>> Ensemble evaluation (kcore=${KCORE})..."
+    python -m src.evaluate_ensemble --kcore "$KCORE"
+    echo "Ensemble evaluation done."
+}
+
+run_two_stage() {
+    echo ""
+    echo ">>> Two-stage evaluation (kcore=${KCORE})..."
+    python -m src.evaluate_two_stage --kcore "$KCORE"
+    echo "Two-stage evaluation done."
 }
 
 # ─────────────────────────────────────────────────────────────────────
@@ -249,36 +279,101 @@ case "$MODE" in
         run_encode
         train_text_ncf
         ;;
+    train-mt)
+        activate_env
+        train_text_ncf_mt
+        ;;
+    train-subrating)
+        activate_env
+        train_text_ncf_subrating
+        ;;
+    ensemble)
+        activate_env
+        run_ensemble
+        ;;
+    two-stage)
+        activate_env
+        run_two_stage
+        ;;
     run-all)
-        # everything: preprocess → baselines → encode → TextNCF
+        # everything: preprocess → baselines → encode → all TextNCF variants → eval
         activate_env
         run_preprocess
         train_rec
         run_encode
+        echo ""
+        echo "=========================================="
+        echo "  Training all TextNCF variants"
+        echo "=========================================="
         train_text_ncf
-        ;;
-    all)
-        activate_env
-        run_preprocess
-        train_rec
-        ;;
-    *)
-        echo "Usage:"
-        echo "  bash scripts/setup_env.sh            # first time (login node)"
-        echo "  sbatch scripts/run_hpc.sh            # baselines pipeline"
-        echo "  sbatch scripts/run_hpc.sh preprocess # preprocess only"
-        echo "  sbatch scripts/run_hpc.sh rec        # train baselines"
+        train_text_ncf_mt
+        train_text_ncf_subrating
         echo ""
-        echo "  TextNCF variant:"
-        echo "  sbatch scripts/run_hpc.sh encode     # encode text → embeddings"
-        echo "  sbatch scripts/run_hpc.sh train-ncf  # train TextNCF"
-        echo "  sbatch scripts/run_hpc.sh text-ncf   # full TextNCF pipeline"
+        echo "=========================================="
+        echo "  Running ensemble + two-stage evaluation"
+        echo "=========================================="
+        run_ensemble
+        run_two_stage
         echo ""
-        echo "  Full comparison:"
-        echo "  sbatch scripts/run_hpc.sh run-all    # baselines + TextNCF"
-        exit 1
+        echo "=========================================="
+        echo "  ALL DONE — Results:"
+        echo "    results/text_ncf/test_metrics.json"
+        echo "    results/text_ncf_mt/test_metrics.json"
+        echo "    results/text_ncf_subrating/test_metrics.json"
+        echo "    results/text_ncf/ensemble_metrics.json"
+        echo "    results/text_ncf/two_stage_metrics.json"
+        echo "=========================================="
         ;;
-esac
+        run-sample)
+            # smoke test: full pipeline with 2 epochs — verifies everything works
+            # before committing to a long training run
+            EPOCH_FLAG="--epochs 2"
+            activate_env
+            run_preprocess
+            run_encode
+            echo ""
+            echo "=========================================="
+            echo "  SMOKE TEST — 2 epochs per variant"
+            echo "=========================================="
+            train_text_ncf
+            train_text_ncf_mt
+            train_text_ncf_subrating
+            run_ensemble
+            run_two_stage
+            echo ""
+            echo "=========================================="
+            echo "  Smoke test done. Check results/ for output."
+            echo "  If everything looks good, run:"
+            echo "    sbatch scripts/run_hpc.sh run-all"
+            echo "=========================================="
+            ;;
+        all)
+            activate_env
+            run_preprocess
+            train_rec
+            ;;
+        *)
+            echo "Usage:"
+            echo "  bash scripts/setup_env.sh            # first time (login node)"
+            echo "  sbatch scripts/run_hpc.sh            # baselines pipeline"
+            echo "  sbatch scripts/run_hpc.sh preprocess # preprocess only"
+            echo "  sbatch scripts/run_hpc.sh rec        # train baselines"
+            echo ""
+            echo "  TextNCF variants:"
+            echo "  sbatch scripts/run_hpc.sh encode         # encode text → embeddings"
+            echo "  sbatch scripts/run_hpc.sh train-ncf      # train base TextNCF"
+            echo "  sbatch scripts/run_hpc.sh train-mt       # train multi-task TextNCF"
+            echo "  sbatch scripts/run_hpc.sh train-subrating # train sub-rating TextNCF"
+            echo "  sbatch scripts/run_hpc.sh ensemble       # ensemble evaluation"
+            echo "  sbatch scripts/run_hpc.sh two-stage      # two-stage evaluation"
+            echo "  sbatch scripts/run_hpc.sh text-ncf       # full base TextNCF pipeline"
+            echo ""
+            echo "  Full comparison:"
+            echo "  sbatch scripts/run_hpc.sh run-all    # baselines + all TextNCF variants"
+            echo "  sbatch scripts/run_hpc.sh run-sample # smoke test (2 epochs, all variants)"
+            exit 1
+            ;;
+    esac
 
 echo ""
 echo "============================================"
