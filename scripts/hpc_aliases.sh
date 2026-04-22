@@ -48,6 +48,10 @@ alias hpc-run='sbatch scripts/run_hpc.sh'
 # ─── TextNCF variant ─────────────────────────────────────────────────
 alias hpc-encode='_hpc_activate && python scripts/encode_text.py --kcore 20'
 alias hpc-train-ncf='_hpc_activate && python -m src.train_text_ncf --config configs/text_ncf.yaml --kcore 20'
+alias hpc-train-mt='_hpc_activate && python -m src.train_text_ncf_mt --config configs/text_ncf_mt.yaml --kcore 20'
+alias hpc-train-subrating='_hpc_activate && python -m src.train_text_ncf_subrating --config configs/text_ncf_subrating.yaml --kcore 20'
+alias hpc-ensemble='_hpc_activate && python -m src.evaluate_ensemble --kcore 20'
+alias hpc-two-stage='_hpc_activate && python -m src.evaluate_two_stage --kcore 20'
 alias hpc-run-ncf='sbatch scripts/run_hpc.sh text-ncf'
 alias hpc-run-all='sbatch scripts/run_hpc.sh run-all'
 
@@ -88,7 +92,11 @@ echo "    hpc-run           — submit baseline pipeline via SLURM"
 echo ""
 echo "  TextNCF (Pramod's variant):"
 echo "    hpc-encode        — encode reviews → sentence embeddings"
-echo "    hpc-train-ncf     — train TextNCF"
+echo "    hpc-train-ncf     — train base TextNCF"
+echo "    hpc-train-mt      — train multi-task TextNCF (BPR + rating)"
+echo "    hpc-train-subrating — train sub-rating TextNCF (per-aspect)"
+echo "    hpc-ensemble      — ensemble scoring (TextNCF + GMF + ItemKNN)"
+echo "    hpc-two-stage     — two-stage retrieval (ItemKNN → TextNCF)"
 echo "    hpc-run-ncf       — submit TextNCF pipeline via SLURM"
 echo "    hpc-run-all       — submit baselines + TextNCF via SLURM"
 echo ""
