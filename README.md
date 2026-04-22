@@ -1,13 +1,13 @@
 # Hotel Recommendation on HotelRec
 
-CMPE 256 — Recommender Systems, Spring 2026
+CMPE 256 - Recommender Systems, Spring 2026
 Team: Aditya Hegde, Pramod Yadav, Hriday Ampavatina
 
 ---
 
 ## Overview
 
-We build and compare multiple recommender system approaches on the [HotelRec](https://github.com/Diego999/HotelRec) dataset — 50M TripAdvisor hotel reviews. The project has three phases:
+We build and compare multiple recommender system approaches on the [HotelRec](https://github.com/Diego999/HotelRec) dataset - 50M TripAdvisor hotel reviews. The project has three phases:
 
 1. **Shared foundation** (Phase 1): data pipeline, baselines, evaluation framework.
 2. **Individual variants** (Phase 2): each member builds one advanced method.
@@ -17,7 +17,7 @@ We build and compare multiple recommender system approaches on the [HotelRec](ht
 
 ## Dataset
 
-**HotelRec** (Antognini & Faltings, LREC 2020) — ~50M hotel reviews, 365K hotels, 22M users.
+**HotelRec** (Antognini & Faltings, LREC 2020) - ~50M hotel reviews, 365K hotels, 22M users.
 Full-dataset stats in [`results/data_evaluation.json`](results/data_evaluation.json).
 
 | Subset | Users | Items | Interactions | Sparsity |
@@ -109,7 +109,7 @@ pip install -e .
 # 2. Download HotelRec.txt into data/raw/
 #    (from https://github.com/Diego999/HotelRec)
 
-# 3. Preprocess (20-core, two-pass — handles 50 GB without OOM)
+# 3. Preprocess (20-core, two-pass - handles 50 GB without OOM)
 python -m src.data.preprocess --kcore 20
 python -m src.data.split --kcore 20
 
@@ -171,7 +171,7 @@ Following He et al. (2017):
 | LightGCN-HG (calibrated) | 0.9312 | 0.7025 |
 | SASRec (calibrated) | 0.9315 | 0.7048 |
 
-Ranking-trained models (BPR) all land at RMSE ≈ 0.93 — the calibration slope is near zero because BPR scores encode pairwise ranking, not rating levels. Popularity wins RMSE because 78% of HotelRec ratings are 4–5 stars, so item-mean is near-optimal on this rating distribution.
+Ranking-trained models (BPR) all land at RMSE ≈ 0.93 - the calibration slope is near zero because BPR scores encode pairwise ranking, not rating levels. Popularity wins RMSE because 78% of HotelRec ratings are 4–5 stars, so item-mean is near-optimal on this rating distribution.
 
 See [`results/sasrec/summary.md`](results/sasrec/summary.md) and [`results/lightgcn_hg/summary.md`](results/lightgcn_hg/summary.md) for the full variant writeups.
 
@@ -187,7 +187,7 @@ See [`results/sasrec/summary.md`](results/sasrec/summary.md) and [`results/light
 
 ## Phase 3 Integration (planned)
 
-All three variants will feed into a **LightGBM meta-learner** trained on out-of-fold predictions from each base model, as the final submission model. Per-variant ensembles (e.g. with ItemKNN) are out of scope — the integration is done at the meta-learner level across all variants.
+All three variants will feed into a **LightGBM meta-learner** trained on out-of-fold predictions from each base model, as the final submission model. Per-variant ensembles (e.g. with ItemKNN) are out of scope - the integration is done at the meta-learner level across all variants.
 
 ---
 
@@ -195,11 +195,11 @@ All three variants will feed into a **LightGBM meta-learner** trained on out-of-
 
 Every reported number traces back to an executed notebook cell:
 
-- [`notebooks/01_preprocessing.ipynb`](notebooks/01_preprocessing.ipynb) — raw scan stats, k-core filter, splits, leakage checks.
-- [`notebooks/02_baselines.ipynb`](notebooks/02_baselines.ipynb) — Popularity / ItemKNN live re-fits + GMF saved metrics, side-by-side tables.
-- [`variants/hriday/notebooks/04_lightgcn_hg.ipynb`](variants/hriday/notebooks/04_lightgcn_hg.ipynb) — LightGCN-HG graph construction + training + evaluation.
-- [`variants/hriday/notebooks/06_sasrec.ipynb`](variants/hriday/notebooks/06_sasrec.ipynb) — SASRec model, training curves, final results.
-- [`notebooks/05_ensemble_and_summary.ipynb`](notebooks/05_ensemble_and_summary.ipynb) — final comparison across all models.
+- [`notebooks/01_preprocessing.ipynb`](notebooks/01_preprocessing.ipynb) - raw scan stats, k-core filter, splits, leakage checks.
+- [`notebooks/02_baselines.ipynb`](notebooks/02_baselines.ipynb) - Popularity / ItemKNN live re-fits + GMF saved metrics, side-by-side tables.
+- [`variants/hriday/notebooks/04_lightgcn_hg.ipynb`](variants/hriday/notebooks/04_lightgcn_hg.ipynb) - LightGCN-HG graph construction + training + evaluation.
+- [`variants/hriday/notebooks/06_sasrec.ipynb`](variants/hriday/notebooks/06_sasrec.ipynb) - SASRec model, training curves, final results.
+- [`notebooks/05_ensemble_and_summary.ipynb`](notebooks/05_ensemble_and_summary.ipynb) - final comparison across all models.
 
 ---
 
@@ -213,4 +213,4 @@ Every reported number traces back to an executed notebook cell:
 
 ## Tools
 
-- **Claude** (Anthropic) — scaffolding, code generation, troubleshooting.
+- **Claude** (Anthropic) - scaffolding, code generation, troubleshooting.

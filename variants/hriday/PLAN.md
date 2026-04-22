@@ -10,7 +10,7 @@ SASRec + LightGCN-HG structure.
 
 ### 1. Started with LightGCN (graph-based CF)
 
-The first direction was **LightGCN** (He et al., SIGIR 2020) — symmetric-
+The first direction was **LightGCN** (He et al., SIGIR 2020) - symmetric-
 normalised graph convolution on the user-item bipartite graph. Standard
 paper implementation, BPR loss, 1-vs-99 evaluation. That beat Popularity,
 GMF, and matched or beat ItemKNN on HR@10/20, but lost to ItemKNN on
@@ -20,7 +20,7 @@ NDCG@5/10/20.
 
 The feedback: using only `(user, item, rating)` makes the variant
 essentially a baseline against a feature-rich dataset. In response, we
-built **LightGCN-HG** — the bipartite graph extended with TripAdvisor
+built **LightGCN-HG** - the bipartite graph extended with TripAdvisor
 geography nodes (`g_id`, `region_slug`, `country_slug`) parsed from
 `hotel_url`. Hotels in the same place share signal through these pivots
 even when they have no co-reviewer.
@@ -36,16 +36,16 @@ After evaluating sequential models at small scale, **SASRec**
 (Kang & McAuley, ICDM 2018) dominated every ranking metric against
 LightGCN-HG and every baseline, even at a 5-minute training budget.
 Scaled up to dim=128 / 30 epochs, SASRec reaches HR@10=0.8808 and
-NDCG@10=0.8392 — beating ItemKNN by +28 % and +38 % relative.
+NDCG@10=0.8392 - beating ItemKNN by +28 % and +38 % relative.
 
 SASRec uses the `date` column (100 % coverage on the 20-core) which
-neither Aditya (NeuMF + sub-ratings) nor Pramod (Text-NCF) consumes —
+neither Aditya (NeuMF + sub-ratings) nor Pramod (Text-NCF) consumes -
 making it the best feature-rich angle for this role in the team split.
 
 **Decision:** SASRec becomes the primary variant. LightGCN-HG is
 retained as a secondary feature-rich option.
 
-## A1 — SASRec (primary)
+## A1 - SASRec (primary)
 
 ### Design
 
@@ -89,7 +89,7 @@ and the [SASRec notebook](notebooks/06_sasrec.ipynb).
   future item. Still apples-to-apples with every other model in the
   comparison.
 
-## A2 — LightGCN-HG (secondary)
+## A2 - LightGCN-HG (secondary)
 
 Kept as a secondary variant because (a) it addresses the "feature-rich"
 critique through a channel orthogonal to SASRec (geography, not time),
