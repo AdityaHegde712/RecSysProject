@@ -1,0 +1,8 @@
+{
+  "rmse_calibrated": 0.9301568682738002,
+  "mae_calibrated": 0.7002320632806285,
+  "n": 184958,
+  "calibration_a": 0.1113060787320137,
+  "calibration_b": 4.027585029602051,
+  "embed_dim": 64
+}
