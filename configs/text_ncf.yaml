@@ -1,0 +1,40 @@
+# Review-text-enhanced Neural Collaborative Filtering (TextNCF)
+# Pramod Yadav — CMPE 256, Spring 2026
+#
+# Two-branch hybrid: GMF (collaborative) + text (sentence embeddings)
+# fused through a small MLP. Text embeddings are pre-computed offline
+# with all-MiniLM-L6-v2 and stored as .npy files.
+
+model:
+  name: text_ncf
+  embed_dim: 64          # collaborative embedding dimension
+  text_dim: 384          # sentence-transformer output dim (all-MiniLM-L6-v2)
+  text_proj_dim: 64      # projected text dimension after linear layer
+  mlp_layers: [128, 64]  # fusion MLP hidden layer sizes
+  dropout: 0.2
+  use_gmf: true          # enable collaborative branch (false for text-only ablation)
+  use_text: true         # enable text branch (false for GMF-only ablation)
+
+training:
+  epochs: 30
+  batch_size: 256
+  lr: 1.0e-3
+  weight_decay: 1.0e-5
+  patience: 5            # early stopping on val NDCG@10
+
+scheduler:
+  type: cosine
+  min_lr: 1.0e-5
+
+negative_sampling:
+  num_negatives: 4       # negatives per positive during training
+
+evaluation:
+  top_k: [5, 10, 20]
+  metrics: [hr, ndcg]
+  num_negatives: 99      # negatives per positive during eval
+
+paths:
+  checkpoint_dir: results/text_ncf
+  log_dir: logs/text_ncf
+  text_emb_dir: data/processed/text_emb
