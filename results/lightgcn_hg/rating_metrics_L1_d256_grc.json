@@ -1,0 +1,14 @@
+{
+  "rmse_calibrated": 0.9311973267838738,
+  "mae_calibrated": 0.7024967527872659,
+  "n": 184958,
+  "calibration_a": 0.000858867191709578,
+  "calibration_b": 4.065481662750244,
+  "num_layers": 1,
+  "embed_dim": 256,
+  "tiers": [
+    "g_id",
+    "region_slug",
+    "country_slug"
+  ]
+}
