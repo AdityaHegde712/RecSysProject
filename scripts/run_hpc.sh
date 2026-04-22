@@ -145,8 +145,10 @@ run_download() {
 }
 
 # ─────────────────────────────────────────────────────────────────────
-# STEP 1: Preprocessing
+# STEP 1: Preprocessing (streams directly from zip — no extraction)
 # ─────────────────────────────────────────────────────────────────────
+MAX_REVIEWS=""  # set by run-sample to limit reviews
+
 run_preprocess() {
     echo ""
     echo ">>> Preprocessing HotelRec data (kcore=${KCORE})..."
@@ -161,29 +163,43 @@ run_preprocess() {
         fi
     fi
 
-    # check for raw data — use find instead of glob (more reliable)
+    # check for raw data
     echo "  Checking for data in $(pwd)/data/raw/ ..."
     ls -la data/raw/ 2>/dev/null | head -10
-    DATA_COUNT=$(find data/raw -maxdepth 1 -type f \( -name "*.zip" -o -name "*.tar.gz" -o -name "*.tgz" -o -name "*.tar.bz2" -o -name "*.json" -o -name "*.txt" \) 2>/dev/null | wc -l | tr -d ' ')
+    DATA_COUNT=$(find data/raw -maxdepth 1 -type f \( -name "*.zip" -o -name "*.txt" \) 2>/dev/null | wc -l | tr -d ' ')
     echo "  Found ${DATA_COUNT} data file(s)"
     if [ "$DATA_COUNT" -eq 0 ]; then
         echo ""
         echo "ERROR: No data found in data/raw/"
         echo ""
         echo "Download the dataset first (on the login node — needs internet):"
-        echo "  bash scripts/download_data.sh full     # real dataset (~10GB)"
-        echo "  bash scripts/download_data.sh sample   # synthetic data for testing"
+        echo "  bash scripts/download_data.sh full"
         echo ""
         echo "Or use the alias:"
-        echo "  hpc-download        # full dataset"
-        echo "  hpc-download-sample # synthetic sample"
+        echo "  hpc-download"
         exit 1
     fi
 
-    python -m src.data.preprocess --kcore "$KCORE" --config configs/data.yaml || {
-        echo "ERROR: Preprocessing failed!"
-        exit 1
-    }
+    # prefer zip-streaming (no 50GB intermediate file)
+    ZIP_FILE=$(find data/raw -maxdepth 1 -name "*.zip" -type f 2>/dev/null | head -1)
+    if [ -n "$ZIP_FILE" ]; then
+        echo "  Using zip-streaming preprocessor (no extraction needed)"
+        python -m src.data.preprocess_zip --kcore "$KCORE" $MAX_REVIEWS || {
+            echo "ERROR: Preprocessing failed!"
+            exit 1
+        }
+    else
+        # fall back to original preprocessor (reads HotelRec.txt)
+        python -m src.data.preprocess --kcore "$KCORE" --config configs/data.yaml || {
+            echo "ERROR: Preprocessing failed!"
+            exit 1
+        }
+        # also need to split
+        python -m src.data.split --kcore "$KCORE" --config configs/data.yaml || {
+            echo "ERROR: Splitting failed!"
+            exit 1
+        }
+    fi
 
     echo "Preprocessing done."
 }
@@ -343,35 +359,36 @@ case "$MODE" in
         echo "    results/text_ncf/two_stage_metrics.json"
         echo "=========================================="
         ;;
-        run-sample)
-            # smoke test: full pipeline with 2 epochs — verifies everything works
-            # before committing to a long training run
-            EPOCH_FLAG="--epochs 2"
-            activate_env
-            run_preprocess
-            run_encode
-            echo ""
-            echo "=========================================="
-            echo "  SMOKE TEST — 2 epochs per variant"
-            echo "=========================================="
-            train_text_ncf
-            train_text_ncf_mt
-            train_text_ncf_subrating
-            run_ensemble
-            run_two_stage
-            echo ""
-            echo "=========================================="
-            echo "  Smoke test done. Check results/ for output."
-            echo "  If everything looks good, run:"
-            echo "    sbatch scripts/run_hpc.sh run-all"
-            echo "=========================================="
-            ;;
-        all)
-            activate_env
-            run_preprocess
-            train_rec
-            ;;
-        *)
+    run-sample)
+        # smoke test: full pipeline with 2 epochs and limited data
+        # verifies everything works before committing to a long run
+        EPOCH_FLAG="--epochs 2"
+        MAX_REVIEWS="--max-reviews 500000"
+        activate_env
+        run_preprocess
+        run_encode
+        echo ""
+        echo "=========================================="
+        echo "  SMOKE TEST — 2 epochs, ${MAX_REVIEWS:-all} reviews"
+        echo "=========================================="
+        train_text_ncf
+        train_text_ncf_mt
+        train_text_ncf_subrating
+        run_ensemble
+        run_two_stage
+        echo ""
+        echo "=========================================="
+        echo "  Smoke test done. Check results/ for output."
+        echo "  If everything looks good, run:"
+        echo "    sbatch scripts/run_hpc.sh run-all"
+        echo "=========================================="
+        ;;
+    all)
+        activate_env
+        run_preprocess
+        train_rec
+        ;;
+    *)
             echo "Usage:"
             echo "  Login node (has internet):"
             echo "    bash scripts/setup_env.sh                # one-time env setup"
