@@ -133,10 +133,16 @@ print('All good.')
     exit 1
 }
 
+# create directories that SLURM expects to exist before job submission
+mkdir -p "${PROJECT_DIR}/logs" "${PROJECT_DIR}/results" "${PROJECT_DIR}/data/raw"
+
 echo ""
 echo "============================================"
-echo "Done. Run:"
-echo "  source scripts/hpc_aliases.sh"
-echo "  hpc-encode        # encode reviews"
-echo "  hpc-train-ncf     # train TextNCF"
+echo "Done. Next steps:"
+echo "  1. Download data (if not already done):"
+echo "       bash scripts/download_data.sh full"
+echo "  2. Source aliases:"
+echo "       source scripts/hpc_aliases.sh"
+echo "  3. Run smoke test:"
+echo "       hpc-run-sample"
 echo "============================================"

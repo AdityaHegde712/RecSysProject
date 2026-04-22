@@ -136,6 +136,15 @@ setup_environment() {
 }
 
 # ─────────────────────────────────────────────────────────────────────
+# STEP 0.5: Download data (login node only — needs internet)
+# ─────────────────────────────────────────────────────────────────────
+run_download() {
+    echo ""
+    echo ">>> Downloading HotelRec data..."
+    bash "${PROJECT_DIR}/scripts/download_data.sh" "${1:-full}"
+}
+
+# ─────────────────────────────────────────────────────────────────────
 # STEP 1: Preprocessing
 # ─────────────────────────────────────────────────────────────────────
 run_preprocess() {
@@ -158,10 +167,16 @@ run_preprocess() {
     DATA_COUNT=$(find data/raw -maxdepth 1 -type f \( -name "*.zip" -o -name "*.tar.gz" -o -name "*.tgz" -o -name "*.tar.bz2" -o -name "*.json" -o -name "*.txt" \) 2>/dev/null | wc -l | tr -d ' ')
     echo "  Found ${DATA_COUNT} data file(s)"
     if [ "$DATA_COUNT" -eq 0 ]; then
+        echo ""
         echo "ERROR: No data found in data/raw/"
-        echo "Expected a .zip/.tar.gz archive or .json/.txt files."
-        echo "Download the dataset first:"
-        echo "  bash scripts/download_data.sh full"
+        echo ""
+        echo "Download the dataset first (on the login node — needs internet):"
+        echo "  bash scripts/download_data.sh full     # real dataset (~10GB)"
+        echo "  bash scripts/download_data.sh sample   # synthetic data for testing"
+        echo ""
+        echo "Or use the alias:"
+        echo "  hpc-download        # full dataset"
+        echo "  hpc-download-sample # synthetic sample"
         exit 1
     fi
 
@@ -255,6 +270,10 @@ case "$MODE" in
     setup)
         # setup runs on login node (has internet) — NOT via sbatch
         setup_environment
+        ;;
+    download)
+        # download runs on login node (has internet) — NOT via sbatch
+        run_download "${2:-full}"
         ;;
     preprocess)
         activate_env
@@ -354,23 +373,28 @@ case "$MODE" in
             ;;
         *)
             echo "Usage:"
-            echo "  bash scripts/setup_env.sh            # first time (login node)"
-            echo "  sbatch scripts/run_hpc.sh            # baselines pipeline"
-            echo "  sbatch scripts/run_hpc.sh preprocess # preprocess only"
-            echo "  sbatch scripts/run_hpc.sh rec        # train baselines"
+            echo "  Login node (has internet):"
+            echo "    bash scripts/setup_env.sh                # one-time env setup"
+            echo "    bash scripts/run_hpc.sh download         # download full dataset"
+            echo "    bash scripts/run_hpc.sh download sample  # synthetic data for testing"
+            echo ""
+            echo "  SLURM jobs (mkdir -p logs first, or use hpc-* aliases):"
+            echo "    sbatch scripts/run_hpc.sh            # baselines pipeline"
+            echo "    sbatch scripts/run_hpc.sh preprocess  # preprocess only"
+            echo "    sbatch scripts/run_hpc.sh rec         # train baselines"
             echo ""
             echo "  TextNCF variants:"
-            echo "  sbatch scripts/run_hpc.sh encode         # encode text → embeddings"
-            echo "  sbatch scripts/run_hpc.sh train-ncf      # train base TextNCF"
-            echo "  sbatch scripts/run_hpc.sh train-mt       # train multi-task TextNCF"
-            echo "  sbatch scripts/run_hpc.sh train-subrating # train sub-rating TextNCF"
-            echo "  sbatch scripts/run_hpc.sh ensemble       # ensemble evaluation"
-            echo "  sbatch scripts/run_hpc.sh two-stage      # two-stage evaluation"
-            echo "  sbatch scripts/run_hpc.sh text-ncf       # full base TextNCF pipeline"
+            echo "    sbatch scripts/run_hpc.sh encode          # encode text → embeddings"
+            echo "    sbatch scripts/run_hpc.sh train-ncf       # train base TextNCF"
+            echo "    sbatch scripts/run_hpc.sh train-mt        # train multi-task TextNCF"
+            echo "    sbatch scripts/run_hpc.sh train-subrating # train sub-rating TextNCF"
+            echo "    sbatch scripts/run_hpc.sh ensemble        # ensemble evaluation"
+            echo "    sbatch scripts/run_hpc.sh two-stage       # two-stage evaluation"
+            echo "    sbatch scripts/run_hpc.sh text-ncf        # full base TextNCF pipeline"
             echo ""
             echo "  Full comparison:"
-            echo "  sbatch scripts/run_hpc.sh run-all    # baselines + all TextNCF variants"
-            echo "  sbatch scripts/run_hpc.sh run-sample # smoke test (2 epochs, all variants)"
+            echo "    sbatch scripts/run_hpc.sh run-all     # baselines + all TextNCF variants"
+            echo "    sbatch scripts/run_hpc.sh run-sample  # smoke test (2 epochs, all variants)"
             exit 1
             ;;
     esac

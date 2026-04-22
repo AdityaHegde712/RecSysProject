@@ -29,6 +29,12 @@ _hpc_run() {
     python "$@"
 }
 
+_hpc_sbatch() {
+    # SLURM needs logs/ to exist before job starts (for --output/--error)
+    mkdir -p logs
+    sbatch "$@"
+}
+
 # ─── Setup ────────────────────────────────────────────────────────────
 alias hpc-setup='bash scripts/setup_env.sh'
 alias hpc-cleanup='bash scripts/cleanup.sh'
@@ -43,7 +49,7 @@ alias hpc-preprocess='_hpc_activate && python -m src.data.preprocess --kcore 20 
 
 # ─── Baselines ────────────────────────────────────────────────────────
 alias hpc-baselines='_hpc_activate && python -m src.run_baselines --kcore 20'
-alias hpc-run='sbatch scripts/run_hpc.sh'
+alias hpc-run='_hpc_sbatch scripts/run_hpc.sh'
 
 # ─── TextNCF variant ─────────────────────────────────────────────────
 alias hpc-encode='_hpc_activate && python scripts/encode_text.py --kcore 20'
@@ -52,9 +58,9 @@ alias hpc-train-mt='_hpc_activate && python -m src.train_text_ncf_mt --config co
 alias hpc-train-subrating='_hpc_activate && python -m src.train_text_ncf_subrating --config configs/text_ncf_subrating.yaml --kcore 20'
 alias hpc-ensemble='_hpc_activate && python -m src.evaluate_ensemble --kcore 20'
 alias hpc-two-stage='_hpc_activate && python -m src.evaluate_two_stage --kcore 20'
-alias hpc-run-ncf='sbatch scripts/run_hpc.sh text-ncf'
-alias hpc-run-all='sbatch scripts/run_hpc.sh run-all'
-alias hpc-run-sample='sbatch scripts/run_hpc.sh run-sample'
+alias hpc-run-ncf='_hpc_sbatch scripts/run_hpc.sh text-ncf'
+alias hpc-run-all='_hpc_sbatch scripts/run_hpc.sh run-all'
+alias hpc-run-sample='_hpc_sbatch scripts/run_hpc.sh run-sample'
 
 # ─── Log viewing ─────────────────────────────────────────────────────
 alias lastlog='ls -t logs/slurm_*.out 2>/dev/null | head -1 | xargs tail -f'
