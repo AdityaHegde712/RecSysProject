@@ -1,0 +1,47 @@
+# LightGCN-HG: LightGCN on the hotel-metadata heterogeneous graph.
+#
+# Starts from the sharpest vanilla config (lightgcn_best_v2) and adds tier
+# nodes for TripAdvisor location (g_id), region (last-2 tokens of the slug),
+# and country (last-1 token). Tiers can be overridden on the CLI for ablation
+# runs:
+#
+#     --tiers g_id                     # g_id pivot only
+#     --tiers g_id,region_slug         # two-tier
+#     --tiers none                     # bipartite (vanilla LightGCN harness)
+#     --tiers g_id,region_slug,country_slug   # full three-tier (default)
+
+model:
+  name: lightgcn_hg
+  embedding_dim: 256
+  num_layers: 1
+
+graph:
+  tiers:
+    - g_id
+    - region_slug
+    - country_slug
+
+training:
+  epochs: 80
+  batch_size: 8192
+  lr: 1.0e-3
+  optimizer: adam
+  weight_decay: 0.0
+  bpr_reg: 1.0e-5
+  patience: 15
+
+scheduler:
+  type: cosine
+  min_lr: 1.0e-5
+
+negative_sampling:
+  num_negatives: 2
+
+evaluation:
+  top_k: [5, 10, 20]
+  metrics: [hr, ndcg]
+  num_negatives: 99
+
+paths:
+  checkpoint_dir: results/lightgcn_hg
+  log_dir: logs/lightgcn_hg
