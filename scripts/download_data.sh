@@ -83,82 +83,94 @@ download_full() {
         exit 1
     fi
 
-    # Don't extract — preprocess.py and explore_data.py stream from the zip directly.
-    echo ""
-    echo "  Download complete. No extraction needed."
-    echo "  Run 'hpa-explore' to inspect or 'hpa-preprocess' to process."
+    # The zip contains ~365K per-hotel JSON files. preprocess.py expects a
+    # single JSONL file at data/raw/HotelRec.txt (one review per line).
+    # We stream from the zip and flatten into JSONL — avoids keeping both
+    # the zip and extracted file on disk simultaneously.
+    _extract_zip_to_jsonl "${DEST}" "" # empty = all reviews
 }
 
-# ─── Sample: generate synthetic data ─────────────────────────────────
-download_sample() {
-    echo ">>> Creating sample dataset for development/testing..."
-    echo "    Generating synthetic hotel review data matching HotelRec format."
+# ─── Shared: stream zip → JSONL ──────────────────────────────────────
+_extract_zip_to_jsonl() {
+    local ZIP_PATH="$1"
+    local MAX_REVIEWS="$2"  # empty string = no limit
+    local TXT_FILE="${RAW_DIR}/HotelRec.txt"
+
+    if [ -f "$TXT_FILE" ]; then
+        LINES=$(wc -l < "$TXT_FILE" | tr -d ' ')
+        echo "  [OK] ${TXT_FILE} already exists (${LINES} reviews) — skipping"
+        return 0
+    fi
+
+    if [ ! -f "$ZIP_PATH" ]; then
+        echo "ERROR: Zip file not found at ${ZIP_PATH}"
+        exit 1
+    fi
+
+    local LIMIT_MSG="all"
+    [ -n "$MAX_REVIEWS" ] && LIMIT_MSG="first ${MAX_REVIEWS}"
+    echo "  Streaming ${LIMIT_MSG} reviews from zip → ${TXT_FILE}..."
     echo ""
 
     python3 -c "
-import json
-import random
-import os
+import zipfile, json
 
-random.seed(42)
-raw_dir = '${RAW_DIR}'
+zip_path = '${ZIP_PATH}'
+out_path = '${TXT_FILE}'
+max_reviews = ${MAX_REVIEWS:-0}  # 0 = no limit
+count = 0
 
-# HotelRec actual format (from the repo README):
-# {
-#   'hotel_url': '...',
-#   'author': 'username',
-#   'date': '2010-02-01T00:00:00',
-#   'rating': 4.0,
-#   'title': 'Great customer service',
-#   'text': '...',
-#   'property_dict': {'sleep quality': 4.0, 'value': 4.0, ...}
-# }
+with zipfile.ZipFile(zip_path, 'r') as zf:
+    names = [n for n in zf.namelist() if n.endswith('.json')]
+    print(f'  Found {len(names)} JSON files in archive')
+    with open(out_path, 'w', encoding='utf-8') as out:
+        for i, name in enumerate(names):
+            with zf.open(name) as f:
+                try:
+                    data = json.load(f)
+                except Exception:
+                    continue
+                reviews = data if isinstance(data, list) else [data]
+                for review in reviews:
+                    out.write(json.dumps(review) + '\n')
+                    count += 1
+                    if max_reviews > 0 and count >= max_reviews:
+                        break
+            if max_reviews > 0 and count >= max_reviews:
+                break
+            if (i + 1) % 10000 == 0:
+                print(f'  Processed {i+1}/{len(names)} files, {count:,} reviews so far')
 
-sub_rating_keys = ['sleep quality', 'value', 'rooms', 'service', 'cleanliness', 'location']
-user_pool = [f'user_{i}' for i in range(500)]
-hotel_names = [
-    'Hotel_Review-g{}-d{}-Reviews-Hotel_{}'.format(
-        random.randint(100000, 999999),
-        random.randint(100000, 9999999),
-        f'TestHotel_{h}'
-    ) for h in range(50)
-]
-
-all_reviews = []
-for hotel_url in hotel_names:
-    n_reviews = random.randint(30, 300)
-    for _ in range(n_reviews):
-        overall = float(random.randint(1, 5))
-        # ~70% of reviews have sub-ratings (matching paper stats)
-        prop = {}
-        if random.random() < 0.71:
-            for key in sub_rating_keys:
-                if random.random() < 0.9:  # not all sub-ratings always present
-                    prop[key] = float(random.randint(1, 5))
-
-        review = {
-            'hotel_url': hotel_url,
-            'author': random.choice(user_pool),
-            'date': f'{random.randint(2005, 2019)}-{random.randint(1,12):02d}-{random.randint(1,28):02d}T00:00:00',
-            'rating': overall,
-            'title': f'Review title {random.randint(1, 10000)}',
-            'text': ' '.join(['word'] * random.randint(20, 300)),
-            'property_dict': prop,
-        }
-        all_reviews.append(review)
-
-# Save as single JSON file (matching the actual HotelRec distribution format)
-fpath = os.path.join(raw_dir, 'HotelRec.json')
-with open(fpath, 'w') as f:
-    json.dump(all_reviews, f)
-
-print(f'  Generated {len(hotel_names)} hotels, {len(all_reviews)} reviews')
-print(f'  Unique users: {len(set(r[\"author\"] for r in all_reviews))}')
-print(f'  Saved to {fpath}')
+print(f'  Done: {count:,} reviews written to {out_path}')
 " || {
-    echo "ERROR: Sample generation failed."
-    exit 1
+        echo "ERROR: Extraction failed!"
+        exit 1
+    }
 }
+
+# ─── Sample: stream first N reviews from zip ─────────────────────────
+SAMPLE_REVIEWS=500000  # ~500K reviews for a quick smoke test
+
+download_sample() {
+    echo ">>> Creating sample dataset (first ${SAMPLE_REVIEWS} reviews)..."
+
+    # Need the zip file
+    ZIP_FILE=$(ls "${RAW_DIR}"/*.zip 2>/dev/null | head -1)
+    if [ -z "$ZIP_FILE" ]; then
+        echo ""
+        echo "ERROR: No zip file found in ${RAW_DIR}/"
+        echo "Download the full dataset first:"
+        echo "  bash scripts/download_data.sh full"
+        echo ""
+        echo "Then run sample to extract a subset:"
+        echo "  bash scripts/download_data.sh sample"
+        exit 1
+    fi
+
+    # Remove existing HotelRec.txt so _extract_zip_to_jsonl runs
+    rm -f "${RAW_DIR}/HotelRec.txt"
+
+    _extract_zip_to_jsonl "$ZIP_FILE" "$SAMPLE_REVIEWS"
 }
 
 # ─── Dispatch ─────────────────────────────────────────────────────────
@@ -180,25 +192,17 @@ esac
 # ─── Stats ────────────────────────────────────────────────────────────
 echo ""
 echo "--- Dataset stats ---"
-ZIP_FILE=$(ls "${RAW_DIR}"/*.zip 2>/dev/null | head -1)
-if [ -n "$ZIP_FILE" ]; then
-    SIZE=$(du -h "$ZIP_FILE" | cut -f1)
-    echo "  Archive: $(basename "$ZIP_FILE") ($SIZE)"
-    # count entries in zip without extracting
-    N_ENTRIES=$(python3 -c "
-import zipfile
-with zipfile.ZipFile('${ZIP_FILE}', 'r') as zf:
-    jsons = [n for n in zf.namelist() if n.endswith('.json')]
-    print(len(jsons))
-" 2>/dev/null || echo "?")
-    echo "  Hotel JSON files inside: ${N_ENTRIES}"
-    echo "  (Run 'hpa-explore' for full review-level stats)"
+TXT_CHECK="${RAW_DIR}/HotelRec.txt"
+if [ -f "$TXT_CHECK" ]; then
+    SIZE=$(du -h "$TXT_CHECK" | cut -f1)
+    LINES=$(wc -l < "$TXT_CHECK" | tr -d ' ')
+    echo "  JSONL file: HotelRec.txt ($SIZE, ${LINES} lines)"
 else
-    N_FILES=$(ls "$RAW_DIR"/*.json 2>/dev/null | wc -l | tr -d ' ')
-    if [ "$N_FILES" -gt 0 ]; then
-        TOTAL_SIZE=$(du -sh "$RAW_DIR" 2>/dev/null | cut -f1)
-        echo "  JSON files: ${N_FILES}"
-        echo "  Total size: ${TOTAL_SIZE}"
+    ZIP_FILE=$(ls "${RAW_DIR}"/*.zip 2>/dev/null | head -1)
+    if [ -n "$ZIP_FILE" ]; then
+        SIZE=$(du -h "$ZIP_FILE" | cut -f1)
+        echo "  Archive: $(basename "$ZIP_FILE") ($SIZE)"
+        echo "  NOTE: Run download again to extract to HotelRec.txt"
     else
         echo "  No data files found in ${RAW_DIR}/"
     fi
