@@ -91,7 +91,9 @@ We use the **20-core** subset (users and items with ≥ 20 interactions each).
 │   ├── baselines/
 │   ├── gmf/
 │   ├── lightgcn_hg/             # Secondary variant
-│   └── sasrec/                  # Primary variant
+│   ├── sasrec/                  # Primary variant
+│   └── text_ncf/                # Pramod's TextNCF family (base + summary;
+│                                #  see results/text_ncf_{mt,subrating,gmf_only,text_only}/ too)
 └── data/                        # (gitignored) Raw & processed data
 ```
 
@@ -128,11 +130,21 @@ python -m src.train_lightgcn_hg --config configs/lightgcn_hg.yaml --kcore 20
 # 8. SASRec (primary variant, ~15 min on GPU)
 python -m src.train_sasrec --config configs/sasrec.yaml --kcore 20
 
-# 9. RMSE for all models
+# 9. TextNCF family (Pramod's variant; best run is Multi-Task)
+#    Full pipeline = encode reviews once (~11 min), then 5 trainings +
+#    ablations + ensemble + two-stage + RMSE (~70 min on GPU).
+python scripts/encode_text.py --kcore 20 --device cuda
+python scripts/fit_itemknn.py --kcore 20          # input to ensemble + two-stage
+bash scripts/run_text_ncf_all.sh
+
+# 10. RMSE for all models
 python scripts/compute_rmse.py --kcore 20 \
     --gmf-ckpt results/gmf/best_model.pt --gmf-dim 64 \
     --lightgcn-hg-ckpt results/lightgcn_hg/best_model_L1_d256_grc.pt \
-    --lightgcn-hg-dim 256 --lightgcn-hg-layers 1
+    --lightgcn-hg-dim 256 --lightgcn-hg-layers 1 \
+    --text-ncf-ckpt          results/text_ncf/best_model.pt \
+    --text-ncf-mt-ckpt       results/text_ncf_mt/best_model.pt \
+    --text-ncf-subrating-ckpt results/text_ncf_subrating/best_model.pt
 ```
 
 ---
@@ -157,6 +169,7 @@ Following He et al. (2017):
 | Popularity | 0.3150 | 0.4215 | 0.5538 | 0.2318 | 0.2662 | 0.2995 |
 | GMF | 0.5553 | 0.6685 | 0.7936 | 0.4498 | 0.4863 | 0.5179 |
 | ItemKNN (k=20) | 0.6835 | 0.6870 | 0.7091 | 0.6082 | 0.6093 | 0.6150 |
+| TextNCF — Multi-Task (Pramod) | 0.5742 | 0.6864 | 0.8031 | 0.4734 | 0.5097 | 0.5392 |
 | LightGCN-HG (secondary, dim=256) | 0.6460 | 0.7591 | 0.8655 | 0.5352 | 0.5718 | 0.5988 |
 | **SASRec (primary, dim=128, L=2)** | **0.8502** | **0.8808** | **0.9173** | **0.8294** | **0.8392** | **0.8484** |
 
@@ -168,12 +181,13 @@ Following He et al. (2017):
 | **Popularity** (item mean) | **0.8685** | **0.6749** |
 | ItemKNN (k=20, weighted neighbors) | 0.9590 | 0.7094 |
 | GMF (calibrated) | 0.9302 | 0.7002 |
+| TextNCF — Multi-Task (calibrated) | 0.9304 | 0.7035 |
 | LightGCN-HG (calibrated) | 0.9312 | 0.7025 |
 | SASRec (calibrated) | 0.9315 | 0.7048 |
 
 Ranking-trained models (BPR) all land at RMSE ≈ 0.93 - the calibration slope is near zero because BPR scores encode pairwise ranking, not rating levels. Popularity wins RMSE because 78% of HotelRec ratings are 4–5 stars, so item-mean is near-optimal on this rating distribution.
 
-See [`results/sasrec/summary.md`](results/sasrec/summary.md) and [`results/lightgcn_hg/summary.md`](results/lightgcn_hg/summary.md) for the full variant writeups.
+See [`results/sasrec/summary.md`](results/sasrec/summary.md), [`results/lightgcn_hg/summary.md`](results/lightgcn_hg/summary.md), and [`results/text_ncf/summary.md`](results/text_ncf/summary.md) for the full variant writeups. Pramod's summary also documents two instructive negative results — a collapsed sub-rating attention head and a per-variant ensemble that degenerated to ItemKNN — that motivate the Phase 3 meta-ensemble.
 
 ---
 
@@ -183,7 +197,7 @@ See [`results/sasrec/summary.md`](results/sasrec/summary.md) and [`results/light
 |--------|---------|----------|
 | Hriday | **SASRec** (primary) + LightGCN-HG (secondary) | Self-attentive sequential recommendation over time-ordered hotel sequences (uses `date`), plus a graph-based secondary with TripAdvisor location / region / country pivot nodes |
 | Aditya | NeuMF + sub-ratings | Attention over hotel quality dimensions (Service, Location, ...) |
-| Pramod | Text-enhanced NCF | Sentence-transformer embeddings of review text |
+| Pramod | **TextNCF — Multi-Task** (best of family) | Frozen MiniLM review embeddings fused with GMF branch; MT head adds a rating-MSE regulariser (α=0.7) — NDCG@10 = 0.5097 |
 
 ## Phase 3 Integration (planned)
 
@@ -199,6 +213,7 @@ Every reported number traces back to an executed notebook cell:
 - [`notebooks/02_baselines.ipynb`](notebooks/02_baselines.ipynb) - Popularity / ItemKNN live re-fits + GMF saved metrics, side-by-side tables.
 - [`variants/hriday/notebooks/04_lightgcn_hg.ipynb`](variants/hriday/notebooks/04_lightgcn_hg.ipynb) - LightGCN-HG graph construction + training + evaluation.
 - [`variants/hriday/notebooks/06_sasrec.ipynb`](variants/hriday/notebooks/06_sasrec.ipynb) - SASRec model, training curves, final results.
+- [`variants/pramod/notebooks/07_text_ncf.ipynb`](variants/pramod/notebooks/07_text_ncf.ipynb) - TextNCF family walkthrough: base + ablations + MT + sub-rating + ensemble + two-stage.
 - [`notebooks/05_ensemble_and_summary.ipynb`](notebooks/05_ensemble_and_summary.ipynb) - final comparison across all models.
 
 ---
