@@ -1,0 +1,10 @@
+{
+  "rmse_calibrated": 0.9304214179823206,
+  "mae_calibrated": 0.7034614605351348,
+  "n": 184958,
+  "calibration_a": 0.012845618650317192,
+  "calibration_b": 4.100793361663818,
+  "model": "text_ncf_mt",
+  "embed_dim": 64,
+  "text_proj_dim": 64
+}
