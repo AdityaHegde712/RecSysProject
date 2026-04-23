@@ -20,12 +20,12 @@ from torch.utils.data import Dataset
 
 # the 6 sub-rating columns in HotelRec
 SUBRATING_COLS = [
-    "rating_service",
-    "rating_cleanliness",
-    "rating_location",
-    "rating_value",
-    "rating_rooms",
-    "rating_sleep_quality",
+    "service",
+    "cleanliness",
+    "location",
+    "value",
+    "rooms",
+    "sleep_quality",
 ]
 
 # human-readable names

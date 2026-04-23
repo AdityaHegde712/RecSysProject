@@ -25,12 +25,17 @@ results/*
 !results/lightgcn_hg/
 !results/sasrec/
 !results/text_ncf/
+!results/text_ncf_gmf_only/
+!results/text_ncf_text_only/
+!results/text_ncf_mt/
+!results/text_ncf_subrating/
 logs/
 checkpoints/
 
 # Model weights
 *.pt
 *.pth
+*.pkl
 
 # OS
 .DS_Store
