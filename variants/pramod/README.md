@@ -77,45 +77,66 @@ python -m src.train_text_ncf_subrating \
 ## How to run everything
 
 ```bash
-# step 1: encode reviews (needs sentence-transformers, ~30 min on GPU)
+# step 1: encode reviews (needs sentence-transformers, ~11 min on RTX 5070 Ti)
 python scripts/encode_text.py --kcore 20 --device cuda
 
-# step 2: train base TextNCF
-python -m src.train_text_ncf --config configs/text_ncf.yaml --kcore 20
+# step 2: fit + pickle ItemKNN (needed by ensemble + two-stage)
+python scripts/fit_itemknn.py --kcore 20
 
-# step 3: train multi-task variant
-python -m src.train_text_ncf_mt --config configs/text_ncf_mt.yaml --kcore 20
-
-# step 4: train sub-rating variant
-python -m src.train_text_ncf_subrating --config configs/text_ncf_subrating.yaml --kcore 20
-
-# step 5: ensemble evaluation (needs trained TextNCF + GMF + ItemKNN)
-python -m src.evaluate_ensemble --kcore 20
-
-# step 6: two-stage evaluation
-python -m src.evaluate_two_stage --kcore 20
+# step 3: kick off everything (5 trainings + ensemble + two-stage + RMSE)
+bash scripts/run_text_ncf_all.sh
 ```
 
-On HPC:
+The `run_text_ncf_all.sh` driver is the one-button reproduction path.
+It writes per-step logs into `logs/<step>.log` and outputs into
+`results/text_ncf*/`. Total wall-clock on RTX 5070 Ti: ~80 min.
+
+Per-step (if you'd rather run them one at a time):
+
+```bash
+python -m src.train_text_ncf            --config configs/text_ncf.yaml            --kcore 20
+python -m src.train_text_ncf_mt         --config configs/text_ncf_mt.yaml         --kcore 20
+python -m src.train_text_ncf_subrating  --config configs/text_ncf_subrating.yaml  --kcore 20
+python -m src.evaluate_ensemble  --kcore 20 --grid-step 0.1
+python -m src.evaluate_two_stage --kcore 20 --retrieve-k 200
+python scripts/compute_rmse.py --kcore 20 \
+    --text-ncf-ckpt           results/text_ncf/best_model.pt \
+    --text-ncf-mt-ckpt        results/text_ncf_mt/best_model.pt \
+    --text-ncf-subrating-ckpt results/text_ncf_subrating/best_model.pt
+```
+
+On HPC (existing aliases continue to work):
 ```bash
 sbatch scripts/run_hpc.sh text-ncf        # base TextNCF
-sbatch scripts/run_hpc.sh text-ncf-mt      # multi-task
-sbatch scripts/run_hpc.sh text-ncf-sub     # sub-rating
-sbatch scripts/run_hpc.sh ensemble         # ensemble eval
-sbatch scripts/run_hpc.sh two-stage        # two-stage eval
+sbatch scripts/run_hpc.sh text-ncf-mt     # multi-task
+sbatch scripts/run_hpc.sh text-ncf-sub    # sub-rating
+sbatch scripts/run_hpc.sh ensemble        # ensemble eval
+sbatch scripts/run_hpc.sh two-stage       # two-stage eval
 ```
 
 ## Results
 
-Baselines (already computed, from `results/baselines/`):
+20-core HotelRec, 1-vs-99 evaluation. Full numbers + decision notes in
+[`results/text_ncf/summary.md`](../../results/text_ncf/summary.md);
+the [`07_text_ncf` notebook](notebooks/07_text_ncf.ipynb) is the
+executed walkthrough.
 
-| Model | HR@10 | NDCG@10 |
-|-------|-------|---------|
-| Popularity | 0.422 | 0.266 |
-| GMF | 0.669 | 0.486 |
-| ItemKNN | 0.687 | 0.609 |
+| Model | HR@10 | NDCG@10 | Notes |
+|-------|-------|---------|-------|
+| Popularity (baseline) | 0.4215 | 0.2662 | item-mean rating |
+| GMF (baseline) | 0.6685 | 0.4863 | from `results/gmf/` |
+| ItemKNN (baseline) | 0.6870 | 0.6093 | k=20, weighted neighbour |
+| TextNCF base | 0.6787 | 0.5057 | beats GMF; below KNN on NDCG |
+| TextNCF GMF-only ablation | 0.6720 | 0.4915 | text branch off |
+| TextNCF text-only ablation | 0.6891 | 0.4981 | GMF off — text carries the lift |
+| **TextNCF Multi-Task** | **0.6864** | **0.5097** | best ranker in the family |
+| TextNCF Sub-rating | 0.6677 | 0.4710 | attention collapsed onto Cleanliness |
+| Ensemble (TextNCF+GMF+KNN) | 0.6870 | 0.6093 | grid picked KNN-only — degenerate |
+| Two-stage (KNN→TextNCF) | 0.3858 | 0.2977 | gt_recall@200 = 5 % — recall-bound |
 
-TextNCF variants — pending full 20-core runs. See `results/text_ncf/summary.md` for latest numbers.
+Calibrated RMSE for the three trained variants is around **0.93** (slope
+≈ 0.01–0.03), the same flat calibration pattern SASRec / GMF /
+LightGCN-HG hit. Popularity wins RMSE at 0.8685. Details in the summary.
 
 ## Data leakage note
 
@@ -148,6 +169,16 @@ User text profiles only use training-split reviews. Item profiles use all review
 
 **Other:**
 - `scripts/encode_text.py` — CLI for encoding reviews
-- `results/text_ncf/` — where results land
+- `scripts/fit_itemknn.py` — fits + pickles ItemKNN to `results/baselines/itemknn.pkl` (input to ensemble + two-stage; the existing baselines runner only saved metric JSONs)
+- `scripts/run_text_ncf_all.sh` — full reproduction driver
+- `scripts/compute_rmse.py` — extended (additively) with `--text-ncf-ckpt` / `--text-ncf-mt-ckpt` / `--text-ncf-subrating-ckpt` flags so the shared rating tooling now covers TextNCF too
+- `variants/pramod/notebooks/07_text_ncf.ipynb` — executed walkthrough
+- `results/text_ncf*/` — per-variant outputs (test_metrics, rating_metrics, ensemble_metrics, two_stage_metrics, summary.md)
 
-I didn't touch any shared files (`src/data/dataset.py`, `src/evaluation/ranking.py`, etc.). All models store text embeddings as PyTorch buffers so `forward(users, items)` works with the shared eval code without any changes.
+I touched two shared files in non-breaking ways: `src/data/subratings.py`
+to fix the sub-rating column names (the parquet uses `service`,
+`cleanliness`, …, not the `rating_<aspect>` names the loader was looking
+for), and `scripts/compute_rmse.py` to add TextNCF-family flags
+following the same pattern Hriday used for GMF / LightGCN-HG. All models
+store text embeddings as PyTorch buffers so `forward(users, items)`
+works with the shared eval code without any other changes.
