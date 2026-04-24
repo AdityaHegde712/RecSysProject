@@ -16,13 +16,13 @@ Uses the same 1-vs-99 eval protocol as every other model in this repo:
 score the positive + 99 negatives, rank by score, compute HR@k and NDCG@k.
 
 Writes:
-    results/aditya_neumf/test_metrics_gmf{g}_mlp{m}.json
-    results/aditya_neumf/rating_metrics_gmf{g}_mlp{m}.json
-    results/aditya_neumf/best_model_gmf{g}_mlp{m}.pt
-    logs/aditya_neumf/metrics_gmf{g}_mlp{m}.csv
+    results/neumf_attn/test_metrics_gmf{g}_mlp{m}.json
+    results/neumf_attn/rating_metrics_gmf{g}_mlp{m}.json
+    results/neumf_attn/best_model_gmf{g}_mlp{m}.pt
+    logs/neumf_attn/metrics_gmf{g}_mlp{m}.csv
 
 Usage:
-    python -m src.train_neumf_attn --config configs/aditya_neumf.yaml --kcore 20
+    python -m src.train_neumf_attn --config configs/neumf_attn.yaml --kcore 20
 """
 
 from __future__ import annotations
@@ -402,8 +402,8 @@ def train(config: dict, kcore_dir: str):
     track_key = f"HR@{k_values[1] if len(k_values) > 1 else k_values[0]}"
     patience  = int(train_cfg.get("patience", epochs))
 
-    log_dir  = paths.get("log_dir", "logs/aditya_neumf")
-    ckpt_dir = paths.get("checkpoint_dir", "results/aditya_neumf")
+    log_dir  = paths.get("log_dir", "logs/neumf_attn")
+    ckpt_dir = paths.get("checkpoint_dir", "results/neumf_attn")
     run_suffix = f"gmf{gmf_dim}_mlp{mlp_dim}"
     Path(log_dir).mkdir(parents=True, exist_ok=True)
     Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
@@ -532,8 +532,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="Train NeuMF with Attention-Weighted Sub-Ratings (Variant B)"
     )
-    parser.add_argument("--config", default="configs/aditya_neumf.yaml",
-                        help="Path to YAML config (default: configs/aditya_neumf.yaml)")
+    parser.add_argument("--config", default="configs/neumf_attn.yaml",
+                        help="Path to YAML config (default: configs/neumf_attn.yaml)")
     parser.add_argument("--data-config", default="configs/data.yaml",
                         help="Path to data YAML config")
     parser.add_argument("--kcore", type=int, default=20,

@@ -12,12 +12,17 @@ model:
   dropout: 0.3
 
 training:
-  epochs: 1000
+  epochs: 50                     # reduced from 1000: per-epoch cost on a single
+                                 # RTX 5070 Ti is ~2 min (23k batches, 4 negs, MLP
+                                 # + attention) and the attention branch plateaus
+                                 # well before 50; patience below early-stops sooner.
   batch_size: 256
   lr: 1.0e-3
   optimizer: adam
-  weight_decay: 1.0e-4 # Stronger L2 regularisation.
-  patience: 30
+  weight_decay: 1.0e-4           # Stronger L2 regularisation.
+  patience: 10                   # longer than SASRec/TextNCF (patience 5) because
+                                 # the attention head is slow to saturate; shorter
+                                 # than the original 30 to keep wall-clock bounded.
 
 scheduler:
   type: cosine
@@ -35,5 +40,5 @@ sub_ratings:
   columns: [service, cleanliness, location, value, rooms, sleep_quality]
 
 paths:
-  checkpoint_dir: results/aditya_neumf
-  log_dir: logs/aditya_neumf
+  checkpoint_dir: results/neumf_attn
+  log_dir: logs/neumf_attn
