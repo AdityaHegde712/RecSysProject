@@ -1,0 +1,41 @@
+# Multi-Task TextNCF: joint ranking + rating prediction
+#
+# Same architecture as TextNCF but with two output heads:
+#   - Ranking head (BPR loss)
+#   - Rating head (MSE loss on 1-5 ratings)
+# Joint loss: alpha * BPR + (1-alpha) * MSE
+
+model:
+  name: text_ncf_mt
+  embed_dim: 64
+  text_dim: 384
+  text_proj_dim: 64
+  mlp_layers: [128, 64]
+  dropout: 0.2
+  use_gmf: true
+  use_text: true
+
+training:
+  epochs: 30
+  batch_size: 256
+  lr: 1.0e-3
+  weight_decay: 1.0e-5
+  patience: 5
+  alpha: 0.7            # BPR weight; (1-alpha) = MSE weight
+
+scheduler:
+  type: cosine
+  min_lr: 1.0e-5
+
+negative_sampling:
+  num_negatives: 4
+
+evaluation:
+  top_k: [5, 10, 20]
+  metrics: [hr, ndcg]
+  num_negatives: 99
+
+paths:
+  checkpoint_dir: results/text_ncf_mt
+  log_dir: logs/text_ncf_mt
+  text_emb_dir: data/processed/text_emb

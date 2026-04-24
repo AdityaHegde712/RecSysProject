@@ -1,5 +1,5 @@
 #!/bin/bash
-# HPC convenience aliases for HotelRec (ItemKNN baseline)
+# HPC convenience aliases for HotelRec
 #
 # Source this file on the HPC login node:
 #   source scripts/hpc_aliases.sh
@@ -13,33 +13,54 @@ alias myjobs='squeue -u $USER --format="%.8i %.20j %.8T %.10M %.6D %R"'
 alias killall='scancel -u $USER'
 
 # ─── Activate venv (auto-activates if not already active) ────────────
-_hpa_activate() {
+_hpc_activate() {
     if [ -z "$VIRTUAL_ENV" ]; then
         if [ -f "venv/bin/activate" ]; then
             source venv/bin/activate
-        elif [ -f ".venv/bin/activate" ]; then
-            source .venv/bin/activate
+        else
+            echo "ERROR: venv not found. Run: bash scripts/setup_env.sh"
+            return 1
         fi
     fi
 }
 
-_hpa_run() {
-    _hpa_activate
+_hpc_run() {
+    _hpc_activate
     python "$@"
 }
 
-# ─── Quick submit ────────────────────────────────────────────────────
-alias hpa-setup='bash scripts/run_hpc.sh setup'
-alias hpa-verify='_hpa_run scripts/verify_env.py'
-alias hpa-validate='_hpa_run scripts/validate_pipeline.py'
-alias hpa-run='sbatch scripts/run_hpc.sh'
-alias hpa-preprocess='_hpa_activate && python -m src.data.preprocess --kcore 20 --config configs/data.yaml'
-alias hpa-split='_hpa_activate && python -m src.data.split --kcore 20 --config configs/data.yaml'
-alias hpa-train='_hpa_activate && python -m src.train --config configs/itemknn.yaml --kcore 20'
-alias hpa-eval='_hpa_activate && python -m src.evaluate --config configs/itemknn.yaml --kcore 20'
-alias hpa-explore='_hpa_run scripts/explore_data.py --data_dir data/raw'
-alias hpa-download='bash scripts/download_data.sh full'
-alias hpa-download-sample='bash scripts/download_data.sh sample'
+_hpc_sbatch() {
+    # SLURM needs logs/ to exist before job starts (for --output/--error)
+    mkdir -p logs
+    sbatch "$@"
+}
+
+# ─── Setup ────────────────────────────────────────────────────────────
+alias hpc-setup='bash scripts/setup_env.sh'
+alias hpc-cleanup='bash scripts/cleanup.sh'
+alias hpc-verify='_hpc_run scripts/verify_env.py'
+alias hpc-validate='_hpc_run scripts/validate_pipeline.py'
+
+# ─── Data ─────────────────────────────────────────────────────────────
+alias hpc-download='bash scripts/download_data.sh full'
+alias hpc-download-sample='bash scripts/download_data.sh sample'
+alias hpc-explore='_hpc_run scripts/explore_data.py --data_dir data/raw'
+alias hpc-preprocess='_hpc_activate && python -m src.data.preprocess --kcore 20 --config configs/data.yaml'
+
+# ─── Baselines ────────────────────────────────────────────────────────
+alias hpc-baselines='_hpc_activate && python -m src.run_baselines --kcore 20'
+alias hpc-run='_hpc_sbatch scripts/run_hpc.sh'
+
+# ─── TextNCF variant ─────────────────────────────────────────────────
+alias hpc-encode='_hpc_activate && python scripts/encode_text.py --kcore 20'
+alias hpc-train-ncf='_hpc_activate && python -m src.train_text_ncf --config configs/text_ncf.yaml --kcore 20'
+alias hpc-train-mt='_hpc_activate && python -m src.train_text_ncf_mt --config configs/text_ncf_mt.yaml --kcore 20'
+alias hpc-train-subrating='_hpc_activate && python -m src.train_text_ncf_subrating --config configs/text_ncf_subrating.yaml --kcore 20'
+alias hpc-ensemble='_hpc_activate && python -m src.evaluate_ensemble --kcore 20'
+alias hpc-two-stage='_hpc_activate && python -m src.evaluate_two_stage --kcore 20'
+alias hpc-run-ncf='_hpc_sbatch scripts/run_hpc.sh text-ncf'
+alias hpc-run-all='_hpc_sbatch scripts/run_hpc.sh run-all'
+alias hpc-run-sample='_hpc_sbatch scripts/run_hpc.sh run-sample'
 
 # ─── Log viewing ─────────────────────────────────────────────────────
 alias lastlog='ls -t logs/slurm_*.out 2>/dev/null | head -1 | xargs tail -f'
@@ -48,13 +69,12 @@ alias alllogs='ls -lt logs/slurm_*.out 2>/dev/null | head -10'
 alias clearlogs='rm -f logs/slurm_*.out logs/slurm_*.err && echo "Logs cleared"'
 
 # ─── Cleanup ─────────────────────────────────────────────────────────
-alias cleandata='rm -rf data/processed && echo "Processed data deleted. Will re-preprocess on next run."'
-alias cleanvenv='rm -rf venv && echo "venv deleted. Run hpa-setup to recreate."'
-alias cleanall='rm -rf venv .wheels logs/slurm_* data/processed && echo "Cleaned venv, wheels, logs, and processed data"'
+alias cleandata='rm -rf data/processed && echo "Processed data deleted."'
+alias cleanvenv='rm -rf venv && echo "venv deleted. Run hpc-setup to recreate."'
+alias cleanall='rm -rf venv .wheels logs/slurm_* data/processed && echo "Cleaned everything."'
 
 # ─── Results ─────────────────────────────────────────────────────────
 alias results='ls -la results/ 2>/dev/null'
-alias checkpoints='ls -la results/itemknn/ 2>/dev/null'
 
 # ─── Interactive session ─────────────────────────────────────────────
 alias cpunode='srun -n 1 -N 1 -c 4 --mem=16G --time=01:00:00 --pty /bin/bash'
@@ -65,28 +85,29 @@ alias nodes='sinfo -N -l'
 alias gpus='sinfo -p gpu -N -l'
 alias quota='df -h /home/$USER'
 
-echo "HotelRec HPC aliases loaded (venv auto-activates). Commands:"
+echo "HotelRec aliases loaded. Commands:"
 echo ""
-echo "  Setup & Data:"
-echo "    hpa-setup              — one-time environment setup"
-echo "    hpa-download           — download full HotelRec dataset"
-echo "    hpa-download-sample    — download small sample for testing"
-echo "    hpa-explore            — print dataset statistics"
+echo "  Setup:"
+echo "    hpc-setup         — one-time environment setup"
+echo "    hpc-cleanup       — remove venv + old artifacts"
+echo "    hpc-download      — download full dataset"
 echo ""
-echo "  Pipeline (auto-activates venv):"
-echo "    hpa-preprocess    — k-core filter raw data → parquet"
-echo "    hpa-split         — split into train/val/test"
-echo "    hpa-train         — fit ItemKNN on training data"
-echo "    hpa-eval          — evaluate ItemKNN on test set"
-echo "    hpa-run           — submit full pipeline via SLURM"
+echo "  Baselines:"
+echo "    hpc-preprocess    — k-core filter raw data"
+echo "    hpc-baselines     — run all baselines"
+echo "    hpc-run           — submit baseline pipeline via SLURM"
+echo ""
+echo "  TextNCF (Pramod's variant):"
+echo "    hpc-encode        — encode reviews → sentence embeddings"
+echo "    hpc-train-ncf     — train base TextNCF"
+echo "    hpc-train-mt      — train multi-task TextNCF (BPR + rating)"
+echo "    hpc-train-subrating — train sub-rating TextNCF (per-aspect)"
+echo "    hpc-ensemble      — ensemble scoring (TextNCF + GMF + ItemKNN)"
+echo "    hpc-two-stage     — two-stage retrieval (ItemKNN → TextNCF)"
+echo "    hpc-run-ncf       — submit TextNCF pipeline via SLURM"
+echo "    hpc-run-all       — submit baselines + TextNCF via SLURM"
+echo "    hpc-run-sample    — smoke test (2 epochs, all variants)"
 echo ""
 echo "  Utilities:"
-echo "    hpa-verify        — verify all deps are working"
-echo "    hpa-validate      — test full pipeline (dry run)"
-echo "    jobs / myjobs     — check job status"
-echo "    killall           — cancel all your jobs"
-echo "    lastlog / lasterr — tail latest log/error"
-echo "    clearlogs         — delete all log files"
-echo "    cleandata         — delete processed data (force re-preprocess)"
-echo "    cpunode           — get interactive CPU session (ItemKNN doesn't need GPU)"
-echo "    gpunode           — get interactive GPU session (for neural variants)"
+echo "    lastlog / lasterr — tail latest SLURM log"
+echo "    cpunode / gpunode — get interactive session"

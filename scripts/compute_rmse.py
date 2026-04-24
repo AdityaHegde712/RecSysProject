@@ -14,6 +14,9 @@ Writes:
   results/baselines/rating_metrics_20core.json
   results/gmf/rating_metrics.json  (if --gmf-ckpt given)
   results/lightgcn_hg/rating_metrics_L{L}_d{D}_{tiers}.json  (if --lightgcn-hg-ckpt given)
+  results/text_ncf/rating_metrics.json              (if --text-ncf-ckpt given)
+  results/text_ncf_mt/rating_metrics.json           (if --text-ncf-mt-ckpt given)
+  results/text_ncf_subrating/rating_metrics.json    (if --text-ncf-subrating-ckpt given)
 
 SASRec's calibrated RMSE is produced directly by src/train_sasrec.py
 alongside its training run, so it isn't re-computed here.
@@ -25,6 +28,9 @@ Usage:
   python scripts/compute_rmse.py --kcore 20 \
       --lightgcn-hg-ckpt results/lightgcn_hg/best_model_L1_d256_grc.pt \
       --lightgcn-hg-dim 256 --lightgcn-hg-layers 1
+  python scripts/compute_rmse.py --kcore 20 \
+      --text-ncf-ckpt results/text_ncf/best_model.pt \
+      --text-ncf-config configs/text_ncf.yaml
 """
 
 import argparse
@@ -49,6 +55,7 @@ from src.evaluation.rating import (
     evaluate_rating_calibrated,
 )
 from src.models.knn import ItemKNN
+from src.utils.io import load_config
 
 
 # -----------------------------------------------------------------------------
@@ -139,6 +146,18 @@ def main():
                              "scripts/extract_hotel_meta.py")
     parser.add_argument("--lightgcn-hg-out", default=None,
                         help="Override output path for HG rating metrics.")
+    parser.add_argument("--text-ncf-ckpt", default=None,
+                        help="Path to a TextNCF checkpoint; computes calibrated RMSE.")
+    parser.add_argument("--text-ncf-config", default="configs/text_ncf.yaml")
+    parser.add_argument("--text-ncf-mt-ckpt", default=None,
+                        help="Path to a Multi-Task TextNCF checkpoint; "
+                             "computes calibrated RMSE.")
+    parser.add_argument("--text-ncf-mt-config", default="configs/text_ncf_mt.yaml")
+    parser.add_argument("--text-ncf-subrating-ckpt", default=None,
+                        help="Path to a Sub-Rating TextNCF checkpoint; "
+                             "computes calibrated RMSE.")
+    parser.add_argument("--text-ncf-subrating-config",
+                        default="configs/text_ncf_subrating.yaml")
     args = parser.parse_args()
 
     kcore_dir = os.path.join(args.data_dir, f"{args.kcore}core")
@@ -303,6 +322,102 @@ def main():
               f"MAE={cal['mae_calibrated']:.4f}  "
               f"(a={cal['calibration_a']:.4f}, b={cal['calibration_b']:.4f})")
         print(f"Saved: {out_hg}")
+
+    # ---- TextNCF variants (calibrated score -> rating) ----
+    _run_text_ncf_calibration(args, val_df, test_df, n_users, n_items)
+
+
+def _pick_torch_device():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    try:
+        torch.zeros(1, device=device)
+    except Exception:
+        device = "cpu"
+    return device
+
+
+def _load_text_ncf_variant(variant_ckpt, variant_config, variant_cls,
+                           n_users, n_items, device, extra_kwargs=None):
+    """Load a TextNCF-family model (base / MT / Subrating) with text embeddings.
+    variant_cls: class object (TextNCF, TextNCFMultiTask, TextNCFSubrating).
+    """
+    from src.data.text_embeddings import load_text_embeddings, TEXT_EMB_DIR
+    from src.utils.io import load_checkpoint
+
+    cfg = load_config(variant_config)
+    mcfg = cfg.get("model", {})
+    kwargs = dict(
+        num_users=n_users,
+        num_items=n_items,
+        embed_dim=mcfg.get("embed_dim", 64),
+        text_dim=mcfg.get("text_dim", 384),
+        text_proj_dim=mcfg.get("text_proj_dim", 64),
+        mlp_layers=mcfg.get("mlp_layers", [128, 64]),
+        dropout=mcfg.get("dropout", 0.2),
+        use_gmf=mcfg.get("use_gmf", True),
+        use_text=mcfg.get("use_text", True),
+    )
+    if extra_kwargs:
+        kwargs.update(extra_kwargs)
+
+    model = variant_cls(**kwargs)
+
+    emb_dir = cfg.get("paths", {}).get("text_emb_dir", TEXT_EMB_DIR)
+    u_emb, i_emb = load_text_embeddings(emb_dir)
+    model.set_text_embeddings(torch.from_numpy(u_emb), torch.from_numpy(i_emb))
+
+    load_checkpoint(variant_ckpt, model=model)
+    model.to(device)
+    model.eval()
+    return model, mcfg
+
+
+def _run_text_ncf_calibration(args, val_df, test_df, n_users, n_items):
+    specs = []
+    if args.text_ncf_ckpt is not None:
+        from src.models.text_ncf import TextNCF
+        specs.append(("text_ncf", TextNCF, args.text_ncf_ckpt,
+                      args.text_ncf_config, None))
+    if args.text_ncf_mt_ckpt is not None:
+        from src.models.text_ncf_mt import TextNCFMultiTask
+        specs.append(("text_ncf_mt", TextNCFMultiTask,
+                      args.text_ncf_mt_ckpt, args.text_ncf_mt_config, None))
+    if args.text_ncf_subrating_ckpt is not None:
+        from src.models.text_ncf_subrating import TextNCFSubrating
+        cfg = load_config(args.text_ncf_subrating_config).get("model", {})
+        extra = {
+            "num_aspects": cfg.get("num_aspects", 6),
+            "aspect_hidden": cfg.get("aspect_hidden", 32),
+        }
+        specs.append(("text_ncf_subrating", TextNCFSubrating,
+                      args.text_ncf_subrating_ckpt,
+                      args.text_ncf_subrating_config, extra))
+
+    if not specs:
+        return
+
+    device = _pick_torch_device()
+
+    for name, cls, ckpt, cfg_path, extra in specs:
+        print()
+        print(f"Computing calibrated RMSE for {name}...")
+        model, mcfg = _load_text_ncf_variant(
+            ckpt, cfg_path, cls, n_users, n_items, device, extra_kwargs=extra)
+
+        cal = evaluate_rating_calibrated(model, val_df, test_df, device=device)
+        cal["model"] = name
+        cal["embed_dim"] = mcfg.get("embed_dim", 64)
+        cal["text_proj_dim"] = mcfg.get("text_proj_dim", 64)
+
+        out_dir = os.path.join("results", name)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        out_path = os.path.join(out_dir, "rating_metrics.json")
+        with open(out_path, "w") as f:
+            json.dump(cal, f, indent=2)
+        print(f"{name} calibrated: RMSE={cal['rmse_calibrated']:.4f}  "
+              f"MAE={cal['mae_calibrated']:.4f}  "
+              f"(a={cal['calibration_a']:.4f}, b={cal['calibration_b']:.4f})")
+        print(f"Saved: {out_path}")
 
 
 if __name__ == "__main__":

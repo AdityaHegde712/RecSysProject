@@ -1,0 +1,35 @@
+model:
+  name: text_ncf
+  embed_dim: 64
+  text_dim: 384
+  text_proj_dim: 64
+  mlp_layers:
+  - 128
+  - 64
+  dropout: 0.2
+  use_gmf: true
+  use_text: false
+training:
+  epochs: 30
+  batch_size: 256
+  lr: 0.001
+  weight_decay: 1.0e-05
+  patience: 5
+scheduler:
+  type: cosine
+  min_lr: 1.0e-05
+negative_sampling:
+  num_negatives: 4
+evaluation:
+  top_k:
+  - 5
+  - 10
+  - 20
+  metrics:
+  - hr
+  - ndcg
+  num_negatives: 99
+paths:
+  checkpoint_dir: results/text_ncf_gmf_only
+  log_dir: logs/text_ncf_gmf_only
+  text_emb_dir: data/processed/text_emb

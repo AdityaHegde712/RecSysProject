@@ -14,16 +14,17 @@
 #SBATCH --mail-type=END,FAIL,TIME_LIMIT
 #SBATCH --mail-user=pramod.yadav@sjsu.edu
 #
-# HotelRec — SJSU CoE HPC Experiment Runner (GMF only)
+# HotelRec — SJSU CoE HPC Experiment Runner
 #
 # FIRST TIME SETUP (run on the login node — has internet):
-#   bash scripts/run_hpc.sh setup
+#   bash scripts/setup_env.sh
 #
 # Then submit experiments:
-#   sbatch scripts/run_hpc.sh            # full pipeline
+#   sbatch scripts/run_hpc.sh            # full baseline pipeline
+#   sbatch scripts/run_hpc.sh text-ncf   # full TextNCF pipeline
+#   sbatch scripts/run_hpc.sh run-all    # both back-to-back
 #   sbatch scripts/run_hpc.sh preprocess # preprocess only
-#   sbatch scripts/run_hpc.sh rec        # train GMF
-#   sbatch scripts/run_hpc.sh eval       # evaluate GMF
+#   sbatch scripts/run_hpc.sh encode     # encode text embeddings
 #
 # SJSU HPC notes:
 #   - Login node: GLIBC 2.17 (CentOS 7), has internet, no GCC
@@ -64,7 +65,7 @@ mkdir -p logs results
 VENV_DIR="${PROJECT_DIR}/venv"
 
 echo "============================================"
-echo "HotelRec — HPC Job (ItemKNN baseline)"
+echo "HotelRec — HPC Job"
 echo "============================================"
 echo "Job ID:      ${SLURM_JOB_ID:-local}"
 echo "Node:        ${SLURM_NODELIST:-$(hostname)}"
@@ -86,7 +87,7 @@ activate_env() {
     else
         echo "ERROR: venv not found at ${VENV_DIR}"
         echo "Run setup first on the login node:"
-        echo "  bash scripts/run_hpc.sh setup"
+        echo "  bash scripts/setup_env.sh"
         exit 1
     fi
 
@@ -115,9 +116,9 @@ if torch.cuda.is_available():
 else:
     print('  WARNING: No GPU detected. Training will be slow.')
 " || {
-    echo "  WARNING: PyTorch check failed. Showing error:"
+    echo "  WARNING: PyTorch check failed"
     python -c "import torch; print(torch.__version__)" 2>&1 | head -5
-    echo "  Check that venv was set up correctly: bash scripts/run_hpc.sh setup"
+    echo "  Try: bash scripts/setup_env.sh"
 }
     echo "-----------------------------"
     echo ""
@@ -125,97 +126,29 @@ else:
 
 # ─────────────────────────────────────────────────────────────────────
 # STEP 0: One-time setup (run on LOGIN NODE — has internet)
+# Delegates to setup_env.sh which handles venv + pip wheels.
 # ─────────────────────────────────────────────────────────────────────
 setup_environment() {
     echo ""
-    echo ">>> One-time environment setup"
-    echo ">>> Run this on the LOGIN NODE (has internet access)"
+    echo ">>> Delegating to scripts/setup_env.sh ..."
     echo ""
-
-    module load python3 2>/dev/null || true
-
-    echo "Python: $(python3 --version 2>&1)"
-    echo "Node:   $(hostname)"
-    echo ""
-
-    # Create venv
-    if [ ! -d "${VENV_DIR}" ]; then
-        echo "Creating virtual environment..."
-        python3 -m venv "${VENV_DIR}"
-    fi
-
-    source "${VENV_DIR}/bin/activate"
-    echo "Activated venv: $(which python)"
-
-    # Upgrade pip first — system pip may not handle manylinux2014 properly
-    echo "Upgrading pip..."
-    python -m pip install --upgrade pip setuptools wheel
-
-    echo ""
-    echo "Installing dependencies..."
-    echo ""
-
-    # Download all wheels first (binary only, no source builds).
-    # This is critical on SJSU HPC — no GCC on login node, no internet
-    # on GPU nodes. We download everything here and install from cache.
-    WHEEL_DIR="${PROJECT_DIR}/.wheels"
-    mkdir -p "$WHEEL_DIR"
-
-    echo "  Downloading binary wheels to .wheels/ ..."
-
-    # PyTorch with CUDA — large (~2GB) but only downloaded once.
-    # Using CUDA 12.1 wheels which are compatible with SJSU HPC.
-    pip download --only-binary=:all: --dest "$WHEEL_DIR" \
-        torch==2.2.2 \
-        --index-url https://download.pytorch.org/whl/cu121
-
-    # Other dependencies — all have manylinux2014 wheels
-    pip download --only-binary=:all: --dest "$WHEEL_DIR" \
-        numpy==1.26.4 scipy==1.13.1 pandas==2.2.2 \
-        scikit-learn==1.4.2 matplotlib==3.9.2 \
-        pyyaml==6.0.1 tqdm==4.66.5 Pillow==10.4.0
-
-    echo ""
-    echo "  Installing from downloaded wheels..."
-
-    # Install PyTorch first (from PyTorch index)
-    pip install --no-index --find-links="$WHEEL_DIR" \
-        torch==2.2.2
-
-    # Install everything else
-    pip install --no-index --find-links="$WHEEL_DIR" \
-        numpy==1.26.4 scipy==1.13.1 pandas==2.2.2 \
-        scikit-learn==1.4.2 matplotlib==3.9.2 \
-        pyyaml==6.0.1 tqdm==4.66.5 Pillow==10.4.0
-
-    # pyarrow for parquet support — try binary wheel, skip if unavailable
-    pip install pyarrow 2>/dev/null || echo "  (pyarrow install skipped — will use pandas CSV fallback)"
-
-    # Install project in editable mode
-    pip install -e . 2>/dev/null || echo "  (editable install skipped)"
-
-    # Download dataset
-    echo ""
-    echo "Downloading HotelRec dataset..."
-    bash scripts/download_data.sh sample || echo "  (dataset download skipped — run manually)"
-
-    # Verify environment
-    echo ""
-    echo "Verifying environment..."
-    python scripts/verify_env.py || true
-
-    echo ""
-    echo "============================================"
-    echo "Setup complete. Next steps:"
-    echo "  python scripts/verify_env.py         # re-verify anytime"
-    echo "  python scripts/validate_pipeline.py  # test full pipeline"
-    echo "  sbatch scripts/run_hpc.sh            # submit full pipeline"
-    echo "============================================"
+    bash "${PROJECT_DIR}/scripts/setup_env.sh"
 }
 
 # ─────────────────────────────────────────────────────────────────────
-# STEP 1: Preprocessing
+# STEP 0.5: Download data (login node only — needs internet)
 # ─────────────────────────────────────────────────────────────────────
+run_download() {
+    echo ""
+    echo ">>> Downloading HotelRec data..."
+    bash "${PROJECT_DIR}/scripts/download_data.sh" "${1:-full}"
+}
+
+# ─────────────────────────────────────────────────────────────────────
+# STEP 1: Preprocessing (streams directly from zip — no extraction)
+# ─────────────────────────────────────────────────────────────────────
+MAX_REVIEWS=""  # set by run-sample to limit reviews
+
 run_preprocess() {
     echo ""
     echo ">>> Preprocessing HotelRec data (kcore=${KCORE})..."
@@ -230,45 +163,118 @@ run_preprocess() {
         fi
     fi
 
-    # check for raw data — use find instead of glob (more reliable)
+    # check for raw data
     echo "  Checking for data in $(pwd)/data/raw/ ..."
     ls -la data/raw/ 2>/dev/null | head -10
-    DATA_COUNT=$(find data/raw -maxdepth 1 -type f \( -name "*.zip" -o -name "*.tar.gz" -o -name "*.tgz" -o -name "*.tar.bz2" -o -name "*.json" -o -name "*.txt" \) 2>/dev/null | wc -l | tr -d ' ')
+    DATA_COUNT=$(find data/raw -maxdepth 1 -type f \( -name "*.zip" -o -name "*.txt" \) 2>/dev/null | wc -l | tr -d ' ')
     echo "  Found ${DATA_COUNT} data file(s)"
     if [ "$DATA_COUNT" -eq 0 ]; then
+        echo ""
         echo "ERROR: No data found in data/raw/"
-        echo "Expected a .zip/.tar.gz archive or .json/.txt files."
-        echo "Download the dataset first:"
+        echo ""
+        echo "Download the dataset first (on the login node — needs internet):"
         echo "  bash scripts/download_data.sh full"
+        echo ""
+        echo "Or use the alias:"
+        echo "  hpc-download"
         exit 1
     fi
 
-    python -m src.data.preprocess --kcore "$KCORE" --config configs/data.yaml || {
-        echo "ERROR: Preprocessing failed!"
-        exit 1
-    }
+    # prefer zip-streaming (no 50GB intermediate file)
+    ZIP_FILE=$(find data/raw -maxdepth 1 -name "*.zip" -type f 2>/dev/null | head -1)
+    if [ -n "$ZIP_FILE" ]; then
+        echo "  Using zip-streaming preprocessor (no extraction needed)"
+        python -m src.data.preprocess_zip --kcore "$KCORE" $MAX_REVIEWS || {
+            echo "ERROR: Preprocessing failed!"
+            exit 1
+        }
+    else
+        # fall back to original preprocessor (reads HotelRec.txt)
+        python -m src.data.preprocess --kcore "$KCORE" --config configs/data.yaml || {
+            echo "ERROR: Preprocessing failed!"
+            exit 1
+        }
+        # also need to split
+        python -m src.data.split --kcore "$KCORE" --config configs/data.yaml || {
+            echo "ERROR: Splitting failed!"
+            exit 1
+        }
+    fi
 
     echo "Preprocessing done."
 }
 
 # ─────────────────────────────────────────────────────────────────────
-# STEP 2: Training — GMF
+# STEP 2: Training — baselines
 # ─────────────────────────────────────────────────────────────────────
 train_rec() {
     echo ""
-    echo ">>> Training ItemKNN (kcore=${KCORE})..."
-    python -m src.train --config configs/itemknn.yaml --kcore "$KCORE"
-    echo "ItemKNN training done."
+    echo ">>> Running baselines (kcore=${KCORE})..."
+    python -m src.run_baselines --kcore "$KCORE" || {
+        echo "ERROR: Baseline training failed!"
+        exit 1
+    }
+    echo "Baseline training done."
 }
 
 # ─────────────────────────────────────────────────────────────────────
-# STEP 3: Evaluation
+# STEP 3: Encode review text → sentence embeddings (TextNCF)
 # ─────────────────────────────────────────────────────────────────────
-run_eval() {
+run_encode() {
     echo ""
-    echo ">>> Evaluating ItemKNN (kcore=${KCORE})..."
-    python -m src.evaluate --config configs/itemknn.yaml --kcore "$KCORE"
-    echo "Evaluation done."
+    echo ">>> Encoding review text (kcore=${KCORE})..."
+
+    EMB_DIR="data/processed/text_emb"
+    if [ -f "${EMB_DIR}/user_text_emb.npy" ] && [ -f "${EMB_DIR}/item_text_emb.npy" ]; then
+        echo "[OK] Text embeddings already exist — skipping"
+        return 0
+    fi
+
+    python scripts/encode_text.py --kcore "$KCORE" || {
+        echo "ERROR: Text encoding failed!"
+        exit 1
+    }
+    echo "Text encoding done."
+}
+
+# ─────────────────────────────────────────────────────────────────────
+# STEP 4: Training — TextNCF variant
+# ─────────────────────────────────────────────────────────────────────
+EPOCH_FLAG=""  # set by run-sample to override epochs
+
+train_text_ncf() {
+    echo ""
+    echo ">>> Training TextNCF (kcore=${KCORE})..."
+    python -m src.train_text_ncf --config configs/text_ncf.yaml --kcore "$KCORE" $EPOCH_FLAG
+    echo "TextNCF training done."
+}
+
+train_text_ncf_mt() {
+    echo ""
+    echo ">>> Training Multi-Task TextNCF (kcore=${KCORE})..."
+    python -m src.train_text_ncf_mt --config configs/text_ncf_mt.yaml --kcore "$KCORE" $EPOCH_FLAG
+    echo "Multi-Task TextNCF training done."
+}
+
+train_text_ncf_subrating() {
+    echo ""
+    echo ">>> Training Sub-Rating TextNCF (kcore=${KCORE})..."
+    python -m src.train_text_ncf_subrating --config configs/text_ncf_subrating.yaml --kcore "$KCORE" $EPOCH_FLAG
+    echo "Sub-Rating TextNCF training done."
+}
+
+run_ensemble() {
+    echo ""
+    echo ">>> Ensemble evaluation (kcore=${KCORE})..."
+    python -m src.evaluate_ensemble --kcore "$KCORE"
+    echo "Ensemble evaluation done."
+}
+
+run_two_stage() {
+    echo ""
+    echo ">>> Two-stage evaluation (kcore=${KCORE})..."
+    python -m src.evaluate_two_stage --kcore "$KCORE"
+    echo "Two-stage evaluation done."
 }
 
 # ─────────────────────────────────────────────────────────────────────
@@ -281,6 +287,10 @@ case "$MODE" in
         # setup runs on login node (has internet) — NOT via sbatch
         setup_environment
         ;;
+    download)
+        # download runs on login node (has internet) — NOT via sbatch
+        run_download "${2:-full}"
+        ;;
     preprocess)
         activate_env
         run_preprocess
@@ -289,26 +299,122 @@ case "$MODE" in
         activate_env
         train_rec
         ;;
-    eval)
+    encode)
         activate_env
-        run_eval
+        run_encode
+        ;;
+    train-ncf)
+        activate_env
+        train_text_ncf
+        ;;
+    text-ncf)
+        # full TextNCF pipeline: preprocess → encode → train
+        activate_env
+        run_preprocess
+        run_encode
+        train_text_ncf
+        ;;
+    train-mt)
+        activate_env
+        train_text_ncf_mt
+        ;;
+    train-subrating)
+        activate_env
+        train_text_ncf_subrating
+        ;;
+    ensemble)
+        activate_env
+        run_ensemble
+        ;;
+    two-stage)
+        activate_env
+        run_two_stage
+        ;;
+    run-all)
+        # everything: preprocess → baselines → encode → all TextNCF variants → eval
+        activate_env
+        run_preprocess
+        train_rec
+        run_encode
+        echo ""
+        echo "=========================================="
+        echo "  Training all TextNCF variants"
+        echo "=========================================="
+        train_text_ncf
+        train_text_ncf_mt
+        train_text_ncf_subrating
+        echo ""
+        echo "=========================================="
+        echo "  Running ensemble + two-stage evaluation"
+        echo "=========================================="
+        run_ensemble
+        run_two_stage
+        echo ""
+        echo "=========================================="
+        echo "  ALL DONE — Results:"
+        echo "    results/text_ncf/test_metrics.json"
+        echo "    results/text_ncf_mt/test_metrics.json"
+        echo "    results/text_ncf_subrating/test_metrics.json"
+        echo "    results/text_ncf/ensemble_metrics.json"
+        echo "    results/text_ncf/two_stage_metrics.json"
+        echo "=========================================="
+        ;;
+    run-sample)
+        # smoke test: full pipeline with 2 epochs and limited data
+        # verifies everything works before committing to a long run
+        EPOCH_FLAG="--epochs 2"
+        MAX_REVIEWS="--max-reviews 500000"
+        activate_env
+        run_preprocess
+        run_encode
+        echo ""
+        echo "=========================================="
+        echo "  SMOKE TEST — 2 epochs, ${MAX_REVIEWS:-all} reviews"
+        echo "=========================================="
+        train_text_ncf
+        train_text_ncf_mt
+        train_text_ncf_subrating
+        run_ensemble
+        run_two_stage
+        echo ""
+        echo "=========================================="
+        echo "  Smoke test done. Check results/ for output."
+        echo "  If everything looks good, run:"
+        echo "    sbatch scripts/run_hpc.sh run-all"
+        echo "=========================================="
         ;;
     all)
         activate_env
         run_preprocess
         train_rec
-        run_eval
         ;;
     *)
-        echo "Usage:"
-        echo "  bash scripts/run_hpc.sh setup       # first time (login node)"
-        echo "  sbatch scripts/run_hpc.sh            # full pipeline (GPU node)"
-        echo "  sbatch scripts/run_hpc.sh preprocess # preprocess only"
-        echo "  sbatch scripts/run_hpc.sh rec        # train GMF"
-        echo "  sbatch scripts/run_hpc.sh eval       # evaluate GMF"
-        exit 1
-        ;;
-esac
+            echo "Usage:"
+            echo "  Login node (has internet):"
+            echo "    bash scripts/setup_env.sh                # one-time env setup"
+            echo "    bash scripts/run_hpc.sh download         # download full dataset"
+            echo "    bash scripts/run_hpc.sh download sample  # synthetic data for testing"
+            echo ""
+            echo "  SLURM jobs (mkdir -p logs first, or use hpc-* aliases):"
+            echo "    sbatch scripts/run_hpc.sh            # baselines pipeline"
+            echo "    sbatch scripts/run_hpc.sh preprocess  # preprocess only"
+            echo "    sbatch scripts/run_hpc.sh rec         # train baselines"
+            echo ""
+            echo "  TextNCF variants:"
+            echo "    sbatch scripts/run_hpc.sh encode          # encode text → embeddings"
+            echo "    sbatch scripts/run_hpc.sh train-ncf       # train base TextNCF"
+            echo "    sbatch scripts/run_hpc.sh train-mt        # train multi-task TextNCF"
+            echo "    sbatch scripts/run_hpc.sh train-subrating # train sub-rating TextNCF"
+            echo "    sbatch scripts/run_hpc.sh ensemble        # ensemble evaluation"
+            echo "    sbatch scripts/run_hpc.sh two-stage       # two-stage evaluation"
+            echo "    sbatch scripts/run_hpc.sh text-ncf        # full base TextNCF pipeline"
+            echo ""
+            echo "  Full comparison:"
+            echo "    sbatch scripts/run_hpc.sh run-all     # baselines + all TextNCF variants"
+            echo "    sbatch scripts/run_hpc.sh run-sample  # smoke test (2 epochs, all variants)"
+            exit 1
+            ;;
+    esac
 
 echo ""
 echo "============================================"

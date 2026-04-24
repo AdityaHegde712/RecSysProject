@@ -1,0 +1,43 @@
+# Sub-Rating Decomposition TextNCF
+#
+# Predicts 6 aspect-level sub-ratings (Service, Cleanliness, Location,
+# Value, Rooms, Sleep Quality) with learned per-user attention weights.
+#
+# Loss: beta * BPR + (1-beta) * mean(MSE per aspect)
+
+model:
+  name: text_ncf_subrating
+  embed_dim: 64
+  text_dim: 384
+  text_proj_dim: 64
+  mlp_layers: [128, 64]
+  dropout: 0.2
+  use_gmf: true
+  use_text: true
+  num_aspects: 6
+  aspect_hidden: 32       # hidden dim in each sub-rating head
+
+training:
+  epochs: 30
+  batch_size: 256
+  lr: 1.0e-3
+  weight_decay: 1.0e-5
+  patience: 5
+  beta: 0.6              # BPR weight; (1-beta) = aspect MSE weight
+
+scheduler:
+  type: cosine
+  min_lr: 1.0e-5
+
+negative_sampling:
+  num_negatives: 4
+
+evaluation:
+  top_k: [5, 10, 20]
+  metrics: [hr, ndcg]
+  num_negatives: 99
+
+paths:
+  checkpoint_dir: results/text_ncf_subrating
+  log_dir: logs/text_ncf_subrating
+  text_emb_dir: data/processed/text_emb
