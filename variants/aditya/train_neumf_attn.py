@@ -205,6 +205,33 @@ def rank_eval(
     return {key: v / max(n, 1) for key, v in metrics.items()}
 
 
+def val_bpr_loss(
+    model: NeuMF_Attn,
+    loader: DataLoader,
+    device: str,
+) -> float:
+    """Compute mean BPR loss on the validation set (no gradient).
+
+    The EvalInteractionDataset yields (users, items, labels) where
+    items[:, 0] is the positive and items[:, 1:] are negatives.  We use
+    items[:, 1] as a single representative negative to mirror the BPR
+    training objective without any extra negative sampling.
+    """
+    model.eval()
+    total, n = 0.0, 0
+    with torch.no_grad():
+        for users, items, _labels in loader:
+            users = users.to(device)   # (B,)
+            items = items.to(device)   # (B, C)
+            pos = items[:, 0]          # (B,)  — positive item
+            neg = items[:, 1]          # (B,)  — first sampled negative
+            pos_s, neg_s = model(users, pos, neg)
+            loss = -torch.log(torch.sigmoid(pos_s - neg_s) + 1e-8).mean()
+            total += loss.item()
+            n += 1
+    return total / max(n, 1)
+
+
 # ---------------------------------------------------------------------------
 # Score → rating calibration (mirrors calibrate_sasrec in train_sasrec.py)
 # ---------------------------------------------------------------------------
@@ -421,6 +448,7 @@ def train(config: dict, kcore_dir: str):
             scheduler.step()
 
         val_m = rank_eval(model, loaders["val"], str(device), tuple(k_values))
+        val_m["val_loss"]      = val_bpr_loss(model, loaders["val"], str(device))
         val_m["train_loss"]    = total_loss / max(n_batches, 1)
         val_m["lr"]            = cur_lr
         val_m["epoch_time_s"]  = round(time.time() - ep_t, 2)
@@ -437,7 +465,7 @@ def train(config: dict, kcore_dir: str):
         else:
             patience_c += 1
 
-        show = ("HR@5", "HR@10", "HR@20", "NDCG@10", "train_loss")
+        show = ("HR@5", "HR@10", "HR@20", "NDCG@10", "train_loss", "val_loss")
         metric_str = "  ".join(
             f"{k}: {val_m[k]:.4f}" for k in show if k in val_m
         )
