@@ -1,0 +1,15 @@
+{
+  "rmse_calibrated": 0.9303601002427923,
+  "mae_calibrated": 0.70316760271166,
+  "calibration_a": 0.020821296197974334,
+  "calibration_b": 4.052612348628233,
+  "n": 184958,
+  "val_score_std": 2.318043211227716,
+  "gmf_dim": 64,
+  "mlp_dim": 64,
+  "mlp_layers": [
+    256,
+    128,
+    64
+  ]
+}
