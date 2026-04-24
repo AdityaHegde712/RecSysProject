@@ -20,7 +20,7 @@ Training uses BPR loss (one sampled negative per interaction).
 Evaluation uses the shared 1-vs-99 ranking protocol (HR@k, NDCG@k).
 
 Usage:
-    from variants.aditya.models.neumf_attn import NeuMF_Attn
+    from src.models.neumf_attn import NeuMF_Attn
 """
 
 from __future__ import annotations

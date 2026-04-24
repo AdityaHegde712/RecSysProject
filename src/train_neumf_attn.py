@@ -22,7 +22,7 @@ Writes:
     logs/aditya_neumf/metrics_gmf{g}_mlp{m}.csv
 
 Usage:
-    python -m variants.aditya.train_neumf_attn --config configs/aditya_neumf.yaml --kcore 20
+    python -m src.train_neumf_attn --config configs/aditya_neumf.yaml --kcore 20
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ from src.utils.io import load_checkpoint, load_config, save_checkpoint
 from src.utils.metrics_logger import MetricsLogger
 from src.utils.seed import set_seed
 from torch.utils.data import DataLoader
-from variants.aditya.models.neumf_attn import N_ASPECTS, NeuMF_Attn
+from src.models.neumf_attn import N_ASPECTS, NeuMF_Attn
 
 # Sub-rating column names — must match both the parquet schema and the YAML.
 SUB_RATING_COLS = ["service", "cleanliness", "location", "value", "rooms", "sleep_quality"]

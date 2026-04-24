@@ -43,6 +43,7 @@ We use the **20-core** subset (users and items with ≥ 20 interactions each).
 │   │   ├── gmf.py               # Generalized Matrix Factorization
 │   │   ├── lightgcn_hg.py       # LightGCN-HG (secondary variant: metadata-augmented graph)
 │   │   ├── sasrec.py            # SASRec (primary variant: self-attentive sequential)
+│   │   ├── neumf_attn.py        # NeuMF-Attn (Variant B: sub-rating attention)
 │   │   ├── popularity.py        # Popularity baseline
 │   │   └── common.py            # Model factory
 │   ├── graph/
@@ -54,7 +55,8 @@ We use the **20-core** subset (users and items with ≥ 20 interactions each).
 │   ├── run_baselines.py         # Run Popularity + ItemKNN
 │   ├── train_gmf.py             # GMF trainer
 │   ├── train_lightgcn_hg.py     # LightGCN-HG trainer
-│   └── train_sasrec.py          # SASRec trainer
+│   ├── train_sasrec.py          # SASRec trainer
+│   └── train_neumf_attn.py      # NeuMF-Attn trainer
 │
 ├── variants/                    # Phase 2: one folder per team member
 │   ├── hriday/                  # SASRec (primary) + LightGCN-HG (secondary)
