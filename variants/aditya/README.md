@@ -18,4 +18,6 @@ enabling personalized weighting of hotel quality dimensions.
 
 ## Status
 
-Phase 2 -- implementation pending.
+Phase 2 -- Implementation plan finalized. Ready for Claude to generate the architecture and training pipeline.
+
+See [PLAN.md](PLAN.md) for the detailed implementation brief and requirements.
