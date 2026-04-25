@@ -77,7 +77,15 @@ def _device() -> torch.device:
 # that takes 1D long tensors of equal length and returns a 1D float tensor.
 # ---------------------------------------------------------------------------
 
-def _load_sasrec(kcore_dir: str, n_items: int, device: torch.device, seed: int):
+def _load_sasrec(kcore_dir: str, n_items: int, device: torch.device, seed: int,
+                 group_size: int = 100):
+    """Returns a score_pairs callable bound to a fixed candidate-group size.
+
+    SASRec is sequence-conditioned, so we have to reshape the flat (user, item)
+    score request into per-user blocks of `group_size` candidates and call
+    `model.score_candidates(seq, cands)` once per block. `group_size` must
+    match the loader's `1 + eval_negatives` (e.g. 100 for 1-vs-99).
+    """
     cfg = load_config("configs/sasrec.yaml")
     mcfg = cfg.get("model", {})
     max_seqlen = mcfg.get("max_seqlen", 100)
@@ -107,18 +115,24 @@ def _load_sasrec(kcore_dir: str, n_items: int, device: torch.device, seed: int):
 
     @torch.no_grad()
     def score_pairs(users: torch.Tensor, items: torch.Tensor) -> torch.Tensor:
-        # Reshape to per-user blocks of 100 candidates so we can use
+        # Reshape to per-user blocks of `group_size` candidates so we can use
         # SASRec's batched score_candidates(seq, cands).
-        # users: (B,) where B = G * 100, ordered as (group, candidate).
+        # users: (B,) where B = G * group_size, ordered as (group, candidate).
         # items: (B,) raw item ids
-        G = users.numel() // 100
-        users_grouped = users.view(G, 100)
-        items_grouped = items.view(G, 100)
+        n = users.numel()
+        if n % group_size != 0:
+            raise ValueError(
+                f"SASRec score_pairs expected a multiple of {group_size} pairs, got {n}. "
+                "Pass --eval-negatives matching the loader you constructed _load_sasrec for."
+            )
+        G = n // group_size
+        users_grouped = users.view(G, group_size)
+        items_grouped = items.view(G, group_size)
         # All rows in a group share the same user, take col 0
         u_block = users_grouped[:, 0].cpu().numpy()
-        seq = get_seq_tensor(u_block)                 # (G, L)
-        cands_shifted = items_grouped + 1             # (G, 100), +1 for pad token convention
-        scores = model.score_candidates(seq, cands_shifted)  # (G, 100)
+        seq = get_seq_tensor(u_block)                          # (G, L)
+        cands_shifted = items_grouped + 1                       # (G, group_size)
+        scores = model.score_candidates(seq, cands_shifted)    # (G, group_size)
         return scores.reshape(-1)
 
     return score_pairs
@@ -301,15 +315,18 @@ def ranks_from_grouped_scores(scores: np.ndarray, group_size: int = 100) -> np.n
     return ranks
 
 
-def train_meta_learner(val_df: pd.DataFrame, score_cols: list[str], seed: int):
+def train_meta_learner(val_df: pd.DataFrame, score_cols: list[str], seed: int,
+                       group_size: int = 100):
     import lightgbm as lgb
 
-    # Group structure: 100 candidates per user-pair eval row.
-    # The order in val_df matches the loader iteration order, so groups of 100
-    # are guaranteed contiguous. We sanity-check that in an assert.
+    # Group structure: group_size candidates per user-pair eval row.
+    # The order in val_df matches the loader iteration order, so groups are
+    # guaranteed contiguous. We sanity-check that in an assert.
     n = len(val_df)
-    assert n % 100 == 0, f"val rows {n} not multiple of 100"
-    groups = np.full(n // 100, 100, dtype=np.int64)
+    assert n % group_size == 0, (
+        f"val rows {n} not a multiple of group_size {group_size}"
+    )
+    groups = np.full(n // group_size, group_size, dtype=np.int64)
 
     X = val_df[score_cols].values.astype(np.float32)
     y = val_df["label"].values.astype(np.int8)
@@ -362,10 +379,14 @@ def main():
     val_loader  = DataLoader(val_ds,  batch_size=args.batch_size, shuffle=False)
     test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False)
 
+    group_size = args.eval_negatives + 1   # 1 positive + N negatives per user
+    print(f"\nGroup size for ranking eval: {group_size} (1 pos + {args.eval_negatives} neg)")
+
     print("\nLoading 4 base-model checkpoints...")
     t0 = time.time()
     scorers = {
-        "sasrec":      _load_sasrec(kcore_dir, n_items, device, args.seed),
+        "sasrec":      _load_sasrec(kcore_dir, n_items, device, args.seed,
+                                     group_size=group_size),
         "lightgcn_hg": _load_lightgcn_hg(kcore_dir, n_users, n_items, device),
         "neumf_attn":  _load_neumf(kcore_dir, n_users, n_items, device),
         "text_ncf_mt": _load_text_ncf_mt(n_users, n_items, device),
@@ -388,13 +409,14 @@ def main():
 
     print("\nTraining LGBMRanker on val...")
     t0 = time.time()
-    ranker = train_meta_learner(val_table, MODEL_NAMES, args.seed)
+    ranker = train_meta_learner(val_table, MODEL_NAMES, args.seed,
+                                 group_size=group_size)
     print(f"  done in {time.time() - t0:.0f}s")
 
     # ----- ranking metrics on test -----
     test_X = test_table[MODEL_NAMES].values.astype(np.float32)
     test_scores = ranker.predict(test_X)
-    test_ranks  = ranks_from_grouped_scores(test_scores)
+    test_ranks  = ranks_from_grouped_scores(test_scores, group_size=group_size)
 
     test_metrics = {}
     for k in (5, 10, 20):
@@ -408,7 +430,7 @@ def main():
     component_metrics = {}
     for col in MODEL_NAMES:
         ranks_col = ranks_from_grouped_scores(
-            test_table[col].values.astype(np.float64))
+            test_table[col].values.astype(np.float64), group_size=group_size)
         component_metrics[col] = {
             f"HR@{k}":   hit_at(ranks_col, k) for k in (5, 10, 20)
         } | {
