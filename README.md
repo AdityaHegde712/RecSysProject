@@ -69,7 +69,8 @@ We use the **20-core** subset (users and items with ≥ 20 interactions each).
 │   ├── itemknn.yaml
 │   ├── lightgcn_hg.yaml         # LightGCN-HG (secondary)
 │   ├── sasrec.yaml              # SASRec (primary)
-│   ├── neumf_attn.yaml          # NeuMF-Attn (Variant B)
+│   ├── neumf_attn.yaml          # NeuMF-Attn (Variant B, enhanced)
+│   ├── neumf_vanilla.yaml       # NeuMF-Attn (Variant B, vanilla ablation)
 │   └── text_ncf*.yaml           # TextNCF family (Variant C, 3 configs)
 │
 ├── scripts/
@@ -98,7 +99,8 @@ We use the **20-core** subset (users and items with ≥ 20 interactions each).
 │   ├── sasrec/                  # Primary variant
 │   ├── text_ncf/                # Pramod's TextNCF family (base + summary;
 │   │                            #  see results/text_ncf_{mt,subrating,gmf_only,text_only}/ too)
-│   └── neumf_attn/              # Aditya's NeuMF-Attn (test + rating metrics, summary)
+│   ├── neumf_attn/              # Aditya's NeuMF-Attn enhanced
+│   └── neumf_vanilla/           # Aditya's NeuMF vanilla ablation
 └── data/                        # (gitignored) Raw & processed data
 ```
 
@@ -135,8 +137,10 @@ python -m src.train_lightgcn_hg --config configs/lightgcn_hg.yaml --kcore 20
 # 8. SASRec (primary variant, ~15 min on GPU)
 python -m src.train_sasrec --config configs/sasrec.yaml --kcore 20
 
-# 9. NeuMF-Attn (Aditya's variant, ~96 min on GPU)
-python -m src.train_neumf_attn --config configs/neumf_attn.yaml --kcore 20
+# 9. NeuMF-Attn (Aditya's variant, ~100 min per run on GPU)
+#    Enhanced (default), then vanilla ablation for the day-10 vanilla-vs-enhanced ask.
+python -m src.train_neumf_attn --config configs/neumf_attn.yaml    --kcore 20
+python -m src.train_neumf_attn --config configs/neumf_vanilla.yaml --kcore 20
 
 # 10. TextNCF family (Pramod's variant; best run is Multi-Task)
 #    Full pipeline = encode reviews once (~11 min), then 5 trainings +
@@ -178,7 +182,8 @@ Following He et al. (2017):
 | GMF | 0.5553 | 0.6685 | 0.7936 | 0.4498 | 0.4863 | 0.5179 |
 | ItemKNN (k=20) | 0.6835 | 0.6870 | 0.7091 | 0.6082 | 0.6093 | 0.6150 |
 | TextNCF — Multi-Task (Pramod) | 0.5742 | 0.6864 | 0.8031 | 0.4734 | 0.5097 | 0.5392 |
-| NeuMF-Attn (Aditya) | 0.5970 | 0.7245 | 0.8465 | 0.4809 | 0.5221 | 0.5530 |
+| Vanilla NeuMF (Aditya) | 0.5978 | 0.7254 | 0.8468 | 0.4815 | 0.5228 | 0.5536 |
+| NeuMF-Attn (Aditya, enhanced) | 0.5970 | 0.7245 | 0.8465 | 0.4809 | 0.5221 | 0.5530 |
 | LightGCN-HG (secondary, dim=256) | 0.6460 | 0.7591 | 0.8655 | 0.5352 | 0.5718 | 0.5988 |
 | **SASRec (primary, dim=128, L=2)** | **0.8502** | **0.8808** | **0.9173** | **0.8294** | **0.8392** | **0.8484** |
 
@@ -191,7 +196,8 @@ Following He et al. (2017):
 | ItemKNN (k=20, weighted neighbors) | 0.9590 | 0.7094 |
 | GMF (calibrated) | 0.9302 | 0.7002 |
 | TextNCF — Multi-Task (calibrated) | 0.9304 | 0.7035 |
-| NeuMF-Attn (calibrated) | 0.9304 | 0.7032 |
+| Vanilla NeuMF (calibrated) | 0.9304 | 0.7035 |
+| NeuMF-Attn / enhanced (calibrated) | 0.9304 | 0.7032 |
 | LightGCN-HG (calibrated) | 0.9312 | 0.7025 |
 | SASRec (calibrated) | 0.9315 | 0.7048 |
 
@@ -206,7 +212,7 @@ See [`results/sasrec/summary.md`](results/sasrec/summary.md), [`results/lightgcn
 | Member | Variant | Key Idea |
 |--------|---------|----------|
 | Hriday | **SASRec** (primary) + LightGCN-HG (secondary) | Self-attentive sequential recommendation over time-ordered hotel sequences (uses `date`), plus a graph-based secondary with TripAdvisor location / region / country pivot nodes |
-| Aditya | **NeuMF-Attn** | NeuMF backbone with a per-user attention layer over six sub-rating aspects; item aspect vectors are train-only averages to avoid leakage — HR@10 = 0.7245 |
+| Aditya | **NeuMF-Attn** (vanilla + enhanced) | NeuMF backbone (GMF + MLP) with an optional per-user attention layer over six sub-rating aspects. Vanilla HR@10 = 0.7254, enhanced 0.7245 — attention head adds ~0 on this dataset. |
 | Pramod | **TextNCF — Multi-Task** (best of family) | Frozen MiniLM review embeddings fused with GMF branch; MT head adds a rating-MSE regulariser (α=0.7) — NDCG@10 = 0.5097 |
 
 ## Phase 3 Integration (planned)
