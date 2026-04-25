@@ -9,11 +9,45 @@ Sleep Quality). Item aspect vectors are pre-computed from the train split
 only (no leakage) and missing values are filled with the train-split column
 mean.
 
-All numbers below were produced by
-`python -m src.train_neumf_attn --config configs/neumf_attn.yaml --kcore 20`
-on a single RTX 5070 Ti.
+All numbers below were produced on a single RTX 5070 Ti by:
 
-## Headline ranking metrics (test split)
+```bash
+python -m src.train_neumf_attn --config configs/neumf_attn.yaml    --kcore 20  # enhanced
+python -m src.train_neumf_attn --config configs/neumf_vanilla.yaml --kcore 20  # vanilla
+```
+
+## Vanilla vs Enhanced (test split)
+
+The two configs differ only in `model.use_attention` (true → enhanced,
+false → vanilla = plain NeuMF, GMF + MLP fusion only). All other
+hyperparameters, the dataset, the seed, the BPR negative sampler, and
+the calibration step are identical. This isolates the contribution of the
+sub-rating attention head.
+
+| Variant                | HR@5   | HR@10  | HR@20  | NDCG@5 | NDCG@10 | NDCG@20 | RMSE   |
+|------------------------|--------|--------|--------|--------|---------|---------|--------|
+| Vanilla NeuMF          | 0.5978 | 0.7254 | 0.8468 | 0.4815 | 0.5228  | 0.5536  | 0.9304 |
+| **Enhanced NeuMF-Attn**| 0.5970 | 0.7245 | 0.8465 | 0.4809 | 0.5221  | 0.5530  | 0.9304 |
+| Δ (enhanced − vanilla) | −0.0008| −0.0009| −0.0003| −0.0006| −0.0007 | −0.0006 | 0.0000 |
+
+**The sub-rating attention head adds zero signal** — every ranking metric
+moves *down* by 1e-3 (well within run-to-run BPR-sampler variance), and
+calibrated RMSE is identical. Diagnoses to follow up on (left for a
+follow-up run, not committed to this branch):
+
+- The aspect vector for each hotel is just six near-correlated 1–5 averages
+  (most hotels are 4–5 across the board on HotelRec). Softmax over six near-
+  identical values produces near-uniform attention regardless of the user.
+- The fusion layer's `+1` quality-score input may be getting weighted to ≈ 0
+  by `weight_decay=1e-4` because the gradient through the attention path is
+  weak relative to the GMF / MLP paths.
+- A sparsemax over aspects (forces hard one-hot-ish weights) or an entropy
+  bonus would be the natural next experiment.
+
+This is the same dataset-level pattern Pramod's TextNCF sub-rating variant
+hit — softmax-over-aspects is a weak prior on HotelRec.
+
+## Cross-team headline ranking (test split)
 
 | Model                           | HR@5   | HR@10  | HR@20  | NDCG@5 | NDCG@10 | NDCG@20 |
 |---------------------------------|--------|--------|--------|--------|---------|---------|
@@ -21,15 +55,20 @@ on a single RTX 5070 Ti.
 | GMF (baseline)                  | 0.5553 | 0.6685 | 0.7936 | 0.4498 | 0.4863  | 0.5179  |
 | ItemKNN (baseline, k=20)        | 0.6835 | 0.6870 | 0.7091 | 0.6082 | 0.6093  | 0.6150  |
 | TextNCF — Multi-Task (Pramod)   | 0.5742 | 0.6864 | 0.8031 | 0.4734 | 0.5097  | 0.5392  |
-| **NeuMF-Attn (this variant)**   | **0.5970** | **0.7245** | **0.8465** | **0.4809** | **0.5221** | **0.5530** |
+| Vanilla NeuMF                   | 0.5978 | 0.7254 | 0.8468 | 0.4815 | 0.5228  | 0.5536  |
+| **NeuMF-Attn (enhanced)**       | **0.5970** | **0.7245** | **0.8465** | **0.4809** | **0.5221** | **0.5530** |
 | LightGCN-HG (secondary, dim=256)| 0.6460 | 0.7591 | 0.8655 | 0.5352 | 0.5718  | 0.5988  |
 | SASRec (primary, dim=128, L=2)  | 0.8502 | 0.8808 | 0.9173 | 0.8294 | 0.8392  | 0.8484  |
 
-NeuMF-Attn has the **best HR@10 and HR@20 among the non-sequential neural
-variants** (GMF, TextNCF family, NeuMF-Attn). It beats GMF by +8.4 % rel on
-HR@10 and +6.7 % rel on HR@20, and beats the best TextNCF (Multi-Task) by
-+5.5 % rel on HR@10. Only LightGCN-HG (which uses a different feature channel
-— hotel geography) and SASRec (sequence model) land above it.
+NeuMF (vanilla *or* enhanced) has the **best HR@10 and HR@20 among the
+non-sequential neural variants** (GMF, TextNCF family, NeuMF). Both NeuMF
+configs beat GMF by ~+8 % rel on HR@10 and beat the best TextNCF (Multi-Task)
+by ~+5.5 % rel. Only LightGCN-HG (different feature channel — hotel
+geography) and SASRec (sequence model) land above NeuMF.
+
+The big lift comes from the **MLP branch + bigger embeddings** (`mlp_dim=64`
+× `[256, 128, 64]` stack vs GMF's flat 64-dim dot product), not from the
+attention head.
 
 ## Calibrated rating metrics
 
@@ -42,7 +81,8 @@ Calibration fits `rating ≈ a · score + b` on the val split, evaluates on test
 | ItemKNN (k=20)          | 0.9590 | 0.7094 | —       | —      |
 | GMF                     | 0.9302 | 0.7002 | —       | —      |
 | TextNCF Multi-Task      | 0.9304 | 0.7035 | 0.0128  | 4.1008 |
-| **NeuMF-Attn**          | 0.9304 | 0.7032 | 0.0208  | 4.0526 |
+| Vanilla NeuMF           | 0.9304 | 0.7035 | 0.0202  | 4.0727 |
+| **NeuMF-Attn (enhanced)** | 0.9304 | 0.7032 | 0.0208  | 4.0526 |
 | LightGCN-HG             | 0.9312 | 0.7025 | —       | —      |
 | SASRec                  | 0.9315 | 0.7048 | —       | —      |
 
