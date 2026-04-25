@@ -1,0 +1,13 @@
+{
+  "rmse_calibrated": 0.8350139888437226,
+  "mae_calibrated": 0.6164211211843996,
+  "n": 184958,
+  "calibration_a": 0.02610726710295035,
+  "calibration_b": 4.045475237504971,
+  "models": [
+    "sasrec",
+    "lightgcn_hg",
+    "neumf_attn",
+    "text_ncf_mt"
+  ]
+}

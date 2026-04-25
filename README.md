@@ -43,6 +43,7 @@ We use the **20-core** subset (users and items with ≥ 20 interactions each).
 │   │   ├── gmf.py               # Generalized Matrix Factorization
 │   │   ├── lightgcn_hg.py       # LightGCN-HG (secondary variant: metadata-augmented graph)
 │   │   ├── sasrec.py            # SASRec (primary variant: self-attentive sequential)
+│   │   ├── neumf_attn.py        # NeuMF-Attn (Variant B: sub-rating attention)
 │   │   ├── popularity.py        # Popularity baseline
 │   │   └── common.py            # Model factory
 │   ├── graph/
@@ -54,7 +55,9 @@ We use the **20-core** subset (users and items with ≥ 20 interactions each).
 │   ├── run_baselines.py         # Run Popularity + ItemKNN
 │   ├── train_gmf.py             # GMF trainer
 │   ├── train_lightgcn_hg.py     # LightGCN-HG trainer
-│   └── train_sasrec.py          # SASRec trainer
+│   ├── train_sasrec.py          # SASRec trainer
+│   ├── train_neumf_attn.py      # NeuMF-Attn trainer
+│   └── phase3_meta_ensemble.py  # Phase 3 LightGBM meta-learner over 4 base models
 │
 ├── variants/                    # Phase 2: one folder per team member
 │   ├── hriday/                  # SASRec (primary) + LightGCN-HG (secondary)
@@ -66,7 +69,10 @@ We use the **20-core** subset (users and items with ≥ 20 interactions each).
 │   ├── gmf.yaml
 │   ├── itemknn.yaml
 │   ├── lightgcn_hg.yaml         # LightGCN-HG (secondary)
-│   └── sasrec.yaml              # SASRec (primary)
+│   ├── sasrec.yaml              # SASRec (primary)
+│   ├── neumf_attn.yaml          # NeuMF-Attn (Variant B, enhanced)
+│   ├── neumf_vanilla.yaml       # NeuMF-Attn (Variant B, vanilla ablation)
+│   └── text_ncf*.yaml           # TextNCF family (Variant C, 3 configs)
 │
 ├── scripts/
 │   ├── explore_data.py          # Full dataset EDA (streaming)
@@ -92,8 +98,11 @@ We use the **20-core** subset (users and items with ≥ 20 interactions each).
 │   ├── gmf/
 │   ├── lightgcn_hg/             # Secondary variant
 │   ├── sasrec/                  # Primary variant
-│   └── text_ncf/                # Pramod's TextNCF family (base + summary;
-│                                #  see results/text_ncf_{mt,subrating,gmf_only,text_only}/ too)
+│   ├── text_ncf/                # Pramod's TextNCF family (base + summary;
+│   │                            #  see results/text_ncf_{mt,subrating,gmf_only,text_only}/ too)
+│   ├── neumf_attn/              # Aditya's NeuMF-Attn enhanced
+│   ├── neumf_vanilla/           # Aditya's NeuMF vanilla ablation
+│   └── phase3_meta/             # LightGBM meta-ensemble (Phase 3)
 └── data/                        # (gitignored) Raw & processed data
 ```
 
@@ -124,20 +133,30 @@ python -m src.train_gmf --config configs/gmf.yaml --kcore 20
 # 6. Hotel metadata (for LightGCN-HG; read-only pass over item2id.json)
 python -m scripts.extract_hotel_meta --kcore 20
 
-# 7. LightGCN-HG (secondary variant, ~53 min on GPU)
-python -m src.train_lightgcn_hg --config configs/lightgcn_hg.yaml --kcore 20
+# 7. LightGCN — vanilla bipartite + HG augmentation (Hriday secondary variant, ~50 min each)
+python -m src.train_lightgcn_hg --config configs/lightgcn_hg.yaml --kcore 20 --tiers none  # vanilla
+python -m src.train_lightgcn_hg --config configs/lightgcn_hg.yaml --kcore 20               # HG (g_id+region+country)
 
 # 8. SASRec (primary variant, ~15 min on GPU)
 python -m src.train_sasrec --config configs/sasrec.yaml --kcore 20
 
-# 9. TextNCF family (Pramod's variant; best run is Multi-Task)
+# 9. NeuMF-Attn (Aditya's variant, ~100 min per run on GPU)
+#    Enhanced (default), then vanilla ablation for the day-10 vanilla-vs-enhanced ask.
+python -m src.train_neumf_attn --config configs/neumf_attn.yaml    --kcore 20
+python -m src.train_neumf_attn --config configs/neumf_vanilla.yaml --kcore 20
+
+# 10. TextNCF family (Pramod's variant; best run is Multi-Task)
 #    Full pipeline = encode reviews once (~11 min), then 5 trainings +
 #    ablations + ensemble + two-stage + RMSE (~70 min on GPU).
 python scripts/encode_text.py --kcore 20 --device cuda
 python scripts/fit_itemknn.py --kcore 20          # input to ensemble + two-stage
 bash scripts/run_text_ncf_all.sh
 
-# 10. RMSE for all models
+# 11. Phase 3 — LightGBM meta-ensemble over the 4 best Phase-2 variants
+#    (~2 min on GPU; needs the four checkpoints from steps 7-10 above)
+python -m src.phase3_meta_ensemble --kcore 20
+
+# 12. RMSE for all models (NeuMF-Attn + Phase 3 save their own rating_metrics.json in-script)
 python scripts/compute_rmse.py --kcore 20 \
     --gmf-ckpt results/gmf/best_model.pt --gmf-dim 64 \
     --lightgcn-hg-ckpt results/lightgcn_hg/best_model_L1_d256_grc.pt \
@@ -169,9 +188,14 @@ Following He et al. (2017):
 | Popularity | 0.3150 | 0.4215 | 0.5538 | 0.2318 | 0.2662 | 0.2995 |
 | GMF | 0.5553 | 0.6685 | 0.7936 | 0.4498 | 0.4863 | 0.5179 |
 | ItemKNN (k=20) | 0.6835 | 0.6870 | 0.7091 | 0.6082 | 0.6093 | 0.6150 |
-| TextNCF — Multi-Task (Pramod) | 0.5742 | 0.6864 | 0.8031 | 0.4734 | 0.5097 | 0.5392 |
-| LightGCN-HG (secondary, dim=256) | 0.6460 | 0.7591 | 0.8655 | 0.5352 | 0.5718 | 0.5988 |
-| **SASRec (primary, dim=128, L=2)** | **0.8502** | **0.8808** | **0.9173** | **0.8294** | **0.8392** | **0.8484** |
+| Vanilla TextNCF (Pramod, base two-branch hybrid) | 0.5688 | 0.6787 | 0.7951 | 0.4702 | 0.5057 | 0.5351 |
+| TextNCF — Multi-Task (Pramod, enhanced) | 0.5742 | 0.6864 | 0.8031 | 0.4734 | 0.5097 | 0.5392 |
+| Vanilla NeuMF (Aditya) | 0.5978 | 0.7254 | 0.8468 | 0.4815 | 0.5228 | 0.5536 |
+| NeuMF-Attn (Aditya, enhanced) | 0.5970 | 0.7245 | 0.8465 | 0.4809 | 0.5221 | 0.5530 |
+| Vanilla LightGCN (Hriday, bipartite) | 0.6414 | 0.7532 | 0.8612 | 0.5315 | 0.5677 | 0.5950 |
+| LightGCN-HG (Hriday secondary, dim=256, +g_id/region/country) | 0.6460 | 0.7591 | 0.8655 | 0.5352 | 0.5718 | 0.5988 |
+| **SASRec (Hriday primary, dim=128, L=2)** | **0.8502** | **0.8808** | **0.9173** | **0.8294** | **0.8392** | **0.8484** |
+| Phase 3 — LGBMRanker meta-ensemble | 0.6600 | 0.7739 | 0.8782 | 0.5474 | 0.5843 | 0.6107 |
 
 **Rating-prediction metrics** (lower is better):
 
@@ -181,13 +205,18 @@ Following He et al. (2017):
 | **Popularity** (item mean) | **0.8685** | **0.6749** |
 | ItemKNN (k=20, weighted neighbors) | 0.9590 | 0.7094 |
 | GMF (calibrated) | 0.9302 | 0.7002 |
-| TextNCF — Multi-Task (calibrated) | 0.9304 | 0.7035 |
-| LightGCN-HG (calibrated) | 0.9312 | 0.7025 |
-| SASRec (calibrated) | 0.9315 | 0.7048 |
+| Vanilla TextNCF (Pramod, calibrated) | 0.9306 | 0.7014 |
+| TextNCF — Multi-Task (Pramod, calibrated) | 0.9304 | 0.7035 |
+| Vanilla NeuMF (Aditya, calibrated) | 0.9304 | 0.7035 |
+| NeuMF-Attn (Aditya, calibrated) | 0.9304 | 0.7032 |
+| Vanilla LightGCN (Hriday, calibrated) | 0.9312 | 0.7025 |
+| LightGCN-HG (Hriday, calibrated) | 0.9312 | 0.7025 |
+| SASRec (Hriday, calibrated) | 0.9315 | 0.7048 |
+| **Phase 3 meta-ensemble** (calibrated) | **0.8350** | **0.6164** |
 
-Ranking-trained models (BPR) all land at RMSE ≈ 0.93 - the calibration slope is near zero because BPR scores encode pairwise ranking, not rating levels. Popularity wins RMSE because 78% of HotelRec ratings are 4–5 stars, so item-mean is near-optimal on this rating distribution.
+Ranking-trained models (BPR) all land at RMSE ≈ 0.93 - the calibration slope is near zero because BPR scores encode pairwise ranking, not rating levels. Popularity wins RMSE because 78% of HotelRec ratings are 4–5 stars, so item-mean is near-optimal on this rating distribution. The Phase 3 LGBMRanker meta-ensemble is the **only ranking-trained pipeline that beats Popularity on RMSE** (0.8350 vs 0.8685) — its blended score has more usable variance for an lstsq calibrator than any single BPR base model. On ranking, however, the meta-ensemble lands well below SASRec alone — the strong-model dilution effect under naïve per-user normalisation. Full discussion in [`results/phase3_meta/summary.md`](results/phase3_meta/summary.md).
 
-See [`results/sasrec/summary.md`](results/sasrec/summary.md), [`results/lightgcn_hg/summary.md`](results/lightgcn_hg/summary.md), and [`results/text_ncf/summary.md`](results/text_ncf/summary.md) for the full variant writeups. Pramod's summary also documents two instructive negative results — a collapsed sub-rating attention head and a per-variant ensemble that degenerated to ItemKNN — that motivate the Phase 3 meta-ensemble.
+See [`results/sasrec/summary.md`](results/sasrec/summary.md), [`results/lightgcn_hg/summary.md`](results/lightgcn_hg/summary.md), [`results/text_ncf/summary.md`](results/text_ncf/summary.md), and [`results/neumf_attn/summary.md`](results/neumf_attn/summary.md) for the full variant writeups. Pramod's summary also documents two instructive negative results — a collapsed sub-rating attention head and a per-variant ensemble that degenerated to ItemKNN — that motivate the Phase 3 meta-ensemble.
 
 ---
 
@@ -196,12 +225,34 @@ See [`results/sasrec/summary.md`](results/sasrec/summary.md), [`results/lightgcn
 | Member | Variant | Key Idea |
 |--------|---------|----------|
 | Hriday | **SASRec** (primary) + LightGCN-HG (secondary) | Self-attentive sequential recommendation over time-ordered hotel sequences (uses `date`), plus a graph-based secondary with TripAdvisor location / region / country pivot nodes |
-| Aditya | NeuMF + sub-ratings | Attention over hotel quality dimensions (Service, Location, ...) |
+| Aditya | **NeuMF-Attn** (vanilla + enhanced) | NeuMF backbone (GMF + MLP) with an optional per-user attention layer over six sub-rating aspects. Vanilla HR@10 = 0.7254, enhanced 0.7245 — attention head adds ~0 on this dataset. |
 | Pramod | **TextNCF — Multi-Task** (best of family) | Frozen MiniLM review embeddings fused with GMF branch; MT head adds a rating-MSE regulariser (α=0.7) — NDCG@10 = 0.5097 |
 
-## Phase 3 Integration (planned)
+## Phase 3 Integration
 
-All three variants will feed into a **LightGBM meta-learner** trained on out-of-fold predictions from each base model, as the final submission model. Per-variant ensembles (e.g. with ItemKNN) are out of scope - the integration is done at the meta-learner level across all variants.
+Implemented as a `LGBMRanker` (lambdarank objective) over per-user
+min-max normalised scores from the four headline models — SASRec
+(Hriday primary), LightGCN-HG (Hriday secondary), NeuMF-Attn (Aditya
+enhanced), TextNCF Multi-Task (Pramod enhanced). Trained on val
+(1+99 candidates per user, label = held-out positive), evaluated on test.
+
+**Mixed result, both findings worth reporting:**
+
+- **Ranking:** the meta-ensemble lands at HR@10 = 0.7739 / NDCG@10 = 0.5843
+  — better than every non-sequential base model, but ~10pp below SASRec
+  alone. Strong-model dilution under naïve per-user normalisation: split-
+  gain feature importance (`text_ncf_mt` 2582 ≥ `neumf_attn` 2419 ≥
+  `lightgcn_hg` 2345 ≥ `sasrec` 1654) confirms the LGBMRanker treats all
+  four columns democratically once they're squashed to `[0, 1]`.
+- **Rating:** the meta-ensemble's calibrated RMSE = 0.8350, MAE = 0.6164.
+  Slope a = 0.0261 (~30× any single BPR base model), beating Popularity
+  (0.8685) and every individual variant. The blend's varied output
+  distribution gives the lstsq calibrator material to work with that no
+  single BPR ranker provides.
+
+Full walkthrough + feature-importance plot + future-work suggestions in
+[`notebooks/05_ensemble_and_summary.ipynb`](notebooks/05_ensemble_and_summary.ipynb)
+and [`results/phase3_meta/summary.md`](results/phase3_meta/summary.md).
 
 ---
 
@@ -214,6 +265,7 @@ Every reported number traces back to an executed notebook cell:
 - [`variants/hriday/notebooks/04_lightgcn_hg.ipynb`](variants/hriday/notebooks/04_lightgcn_hg.ipynb) - LightGCN-HG graph construction + training + evaluation.
 - [`variants/hriday/notebooks/06_sasrec.ipynb`](variants/hriday/notebooks/06_sasrec.ipynb) - SASRec model, training curves, final results.
 - [`variants/pramod/notebooks/07_text_ncf.ipynb`](variants/pramod/notebooks/07_text_ncf.ipynb) - TextNCF family walkthrough: base + ablations + MT + sub-rating + ensemble + two-stage.
+- [`variants/aditya/notebooks/08_neumf_attn.ipynb`](variants/aditya/notebooks/08_neumf_attn.ipynb) - NeuMF-Attn model, training curves, and final comparison.
 - [`notebooks/05_ensemble_and_summary.ipynb`](notebooks/05_ensemble_and_summary.ipynb) - final comparison across all models.
 
 ---

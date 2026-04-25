@@ -167,12 +167,25 @@ Trained to early stop at epoch 52; best checkpoint from epoch 37.
 | Popularity | 0.3150 | 0.4215 | 0.5538 | 0.2318 | 0.2662 | 0.2995 |
 | GMF | 0.5553 | 0.6685 | 0.7936 | 0.4498 | 0.4863 | 0.5179 |
 | ItemKNN (k=20) | **0.6835** | 0.6870 | 0.7091 | **0.6082** | **0.6093** | **0.6150** |
+| Vanilla LightGCN (bipartite, no tiers) | 0.6414 | 0.7532 | 0.8612 | 0.5315 | 0.5677 | 0.5950 |
 | **LightGCN-HG (3-tier)** | 0.6460 | **0.7591** | **0.8655** | 0.5352 | 0.5718 | 0.5988 |
 
 Beats every baseline on HR@10/20 by comfortable margins. Loses NDCG@5/10/20
 to ItemKNN because ItemKNN is very concentrated on top-1 placement. SASRec
 (primary) dominates this comparison on every metric - HG is kept as a
 secondary angle, not the lead result.
+
+**Vanilla vs HG A/B** (added for the day-10 vanilla-vs-enhanced ask):
+LightGCN-HG beats the vanilla bipartite LightGCN by +0.0059 HR@10 and
++0.0041 NDCG@10 — small but consistent across every k. The geography
+augmentation works as advertised; the lift is just modest because most
+of the signal is already in the user-item bipartite graph. Calibrated
+RMSE is identical (0.9312) — the augmentation moves ranking, not rating.
+
+Run vanilla via `--tiers none`:
+```bash
+python -m src.train_lightgcn_hg --config configs/lightgcn_hg.yaml --kcore 20 --tiers none
+```
 
 ### Files
 
@@ -186,7 +199,17 @@ secondary angle, not the lead result.
 
 ```bash
 python -m scripts.extract_hotel_meta --kcore 20
+
+# Vanilla bipartite LightGCN (vanilla-vs-enhanced A/B)
+python -m src.train_lightgcn_hg --config configs/lightgcn_hg.yaml --kcore 20 --tiers none
+
+# HG variant (default — uses g_id, region, country pivots)
 python -m src.train_lightgcn_hg --config configs/lightgcn_hg.yaml --kcore 20
+
+# Calibrated RMSE for both checkpoints
+python scripts/compute_rmse.py --kcore 20 \
+    --lightgcn-hg-ckpt results/lightgcn_hg/best_model_L1_d256_none.pt \
+    --lightgcn-hg-dim 256 --lightgcn-hg-layers 1 --lightgcn-hg-tiers none
 python scripts/compute_rmse.py --kcore 20 \
     --lightgcn-hg-ckpt results/lightgcn_hg/best_model_L1_d256_grc.pt \
     --lightgcn-hg-dim 256 --lightgcn-hg-layers 1
