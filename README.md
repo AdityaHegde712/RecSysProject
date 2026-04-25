@@ -74,35 +74,38 @@ We use the **20-core** subset (users and items with ≥ 20 interactions each).
 │   ├── neumf_vanilla.yaml       # NeuMF-Attn (Variant B, vanilla ablation)
 │   └── text_ncf*.yaml           # TextNCF family (Variant C, 3 configs)
 │
-├── scripts/
+├── scripts/                     # End-to-end reproducibility scripts
+│   ├── download_data.sh         # Fetch HotelRec.txt into data/raw/
 │   ├── explore_data.py          # Full dataset EDA (streaming)
 │   ├── extract_hotel_meta.py    # Parse TripAdvisor URL → g_id/region/country
-│   ├── compute_rmse.py          # RMSE/MAE for baselines + GMF + LightGCN-HG
-│   ├── summarize_lightgcn_hg.py # results/lightgcn_hg/summary.md
-│   ├── summarize_sasrec.py      # results/sasrec/summary.md
-│   ├── download_data.sh
-│   ├── validate_pipeline.py
-│   ├── verify_env.py
-│   ├── run_hpc.sh
-│   └── hpc_aliases.sh
+│   ├── encode_text.py           # MiniLM review encoding (offline)
+│   ├── fit_itemknn.py           # Pickle a fitted ItemKNN (input to ensemble + two-stage)
+│   ├── compute_rmse.py          # RMSE/MAE for baselines + every variant
+│   ├── run_text_ncf_all.sh      # One-button driver for the TextNCF family
+│   ├── validate_pipeline.py     # Sanity check after preprocessing
+│   └── verify_env.py            # Env/version verification
 │
 ├── notebooks/                   # Executed, reproducible narratives (root = shared)
+│   ├── 01_dataset_eda.ipynb     # HotelRec EDA on the raw stats
 │   ├── 01_preprocessing.ipynb   # Raw stats → k-core → splits, with all cells executed
 │   ├── 02_baselines.ipynb       # Popularity / ItemKNN / GMF, live re-fits
-│   └── 05_ensemble_and_summary.ipynb  # Final cross-model comparison tables + plots
+│   └── 05_ensemble_and_summary.ipynb  # Final cross-model comparison + Phase 3 walkthrough
 │
-├── docs/
 ├── results/
 │   ├── data_evaluation.json
 │   ├── baselines/
 │   ├── gmf/
-│   ├── lightgcn_hg/             # Secondary variant
-│   ├── sasrec/                  # Primary variant
-│   ├── text_ncf/                # Pramod's TextNCF family (base + summary;
-│   │                            #  see results/text_ncf_{mt,subrating,gmf_only,text_only}/ too)
-│   ├── neumf_attn/              # Aditya's NeuMF-Attn enhanced
-│   ├── neumf_vanilla/           # Aditya's NeuMF vanilla ablation
-│   └── phase3_meta/             # LightGBM meta-ensemble (Phase 3)
+│   ├── lightgcn_hg/             # Hriday — secondary variant (vanilla + HG)
+│   ├── sasrec/                  # Hriday — primary variant
+│   ├── text_ncf*/               # Pramod's TextNCF family (5 sub-result dirs)
+│   ├── neumf_attn/              # Aditya — NeuMF enhanced
+│   ├── neumf_vanilla/           # Aditya — NeuMF vanilla ablation
+│   └── phase3_meta/             # Phase 3 LightGBM meta-ensemble
+│
+├── extras/                      # Off-path tooling (not required for repro)
+│   ├── hpc/                     # Pramod's SLURM/HPC convenience layer
+│   └── dev_tooling/             # summary.md auto-generators (frozen since hand-edited)
+│
 └── data/                        # (gitignored) Raw & processed data
 ```
 
@@ -270,14 +273,71 @@ Every reported number traces back to an executed notebook cell:
 
 ---
 
+## Reproducibility
+
+**Canonical environment (what the shipped numbers were produced on):**
+
+- Windows 11, Python 3.11
+- PyTorch nightly with CUDA 12.8 (RTX 5070 Ti / Blackwell — `cu124` will not load on this GPU; the nightly is required for the SM_120 kernel).
+  ```bash
+  pip install --pre torch torchvision torchaudio \
+      --index-url https://download.pytorch.org/whl/nightly/cu128
+  ```
+- The remaining dependencies pin via `requirements.txt`.
+
+**Total wall-clock for an end-to-end re-run (RTX 5070 Ti):**
+
+| Step | Cost | Notes |
+|---|---|---|
+| Data download | network-bound | ~50 GB zip, single fetch |
+| Preprocessing (k-core + split) | ~25 min | streaming JSONL, two-pass |
+| Baselines (Popularity + ItemKNN + GMF) | ~30 min | step 4–5 |
+| LightGCN vanilla + HG | ~100 min | step 7 |
+| SASRec | ~15 min | step 8 |
+| NeuMF vanilla + enhanced | ~200 min | step 9 |
+| TextNCF family (5 trainings + ensemble + two-stage + RMSE) | ~80 min | step 10 |
+| Phase 3 meta-ensemble | ~2 min | step 11 |
+| RMSE pass for all | ~5 min | step 12 |
+| **Total** | **≈ 7.5 hours** | overnight on a single GPU |
+
+**HPC alternative.** Pramod's SLURM layer lives in `extras/hpc/`
+(`run_hpc.sh`, aliases, `requirements-hpc.txt`). Optional. The canonical
+local path above is what was used for every shipped result.
+
+## AI tool disclosure
+
+Per the project guidelines, AI tools were used as follows. Each variant
+section's design decision log captures the substantive choices each
+member made — when AI suggested an approach, what they tried, and what
+they concluded. The team owns and can defend every design decision in
+the repo and the report.
+
+**Used:**
+
+- **Claude** (Anthropic) — code scaffolding, debugging assistance,
+  literature recall, prose review. Specific contributions: shared
+  evaluation framework boilerplate, model class skeletons, README and
+  summary drafting from concrete numbers, Phase 3 LightGBM harness.
+- **GitHub Copilot** — inline completion during coding.
+
+**Not used:**
+
+- AI for authoring final report prose. The unified report is human-written
+  with at most grammar/typo correction.
+- AI for any data-leakage decisions (train-only profile aggregation,
+  candidate-set construction, calibration-set choice) — those came from
+  the team's own discussion of the protocol.
+
 ## References
 
-- Antognini & Faltings (2020). *HotelRec*. LREC 2020.
-- He et al. (2017). *Neural Collaborative Filtering*. WWW 2017.
-- He et al. (2020). *LightGCN*. SIGIR 2020.
-- Kang & McAuley (2018). *Self-Attentive Sequential Recommendation*. ICDM 2018.
-- Sarwar et al. (2001). *Item-Based Collaborative Filtering*. WWW 2001.
-
-## Tools
-
-- **Claude** (Anthropic) - scaffolding, code generation, troubleshooting.
+- Antognini & Faltings (2020). *HotelRec.* LREC.
+- He et al. (2017). *Neural Collaborative Filtering.* WWW.
+- He et al. (2020). *LightGCN.* SIGIR.
+- Kang & McAuley (2018). *Self-Attentive Sequential Recommendation.* ICDM.
+- Liang et al. (2018). *Variational Autoencoders for Collaborative Filtering.* WWW.
+- Hidasi et al. (2016). *Session-based Recommendations with RNNs.* ICLR.
+- Sun et al. (2019). *BERT4Rec.* CIKM.
+- Petrov & Macdonald (2022). *A Systematic Review and Replicability Study of BERT4Rec.* RecSys.
+- Sarwar et al. (2001). *Item-Based Collaborative Filtering.* WWW.
+- Reimers & Gurevych (2019). *Sentence-BERT.* EMNLP.
+- Wang et al. (2020). *MiniLM.* NeurIPS.

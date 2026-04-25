@@ -2,7 +2,7 @@
 
 Metadata-augmented LightGCN variant (secondary). Extends the (user, item) bipartite graph from the LightGCN paper (He et al., SIGIR 2020) with TripAdvisor location nodes parsed from the hotel URL (g_id, region, country), giving hotels a way to share signal through geographic pivots rather than only through common reviewers. Same BPR loop as the standard LightGCN formulation; only the adjacency changes.
 
-See `variants/hriday/PLAN.md` for the design doc and the decision trail that led to SASRec as the primary variant. Walkthrough in `variants/hriday/notebooks/04_lightgcn_hg.ipynb`.
+See [`variants/hriday/README.md`](../../variants/hriday/README.md) for the design doc and the decision trail that led to SASRec as the primary variant. Walkthrough in [`variants/hriday/notebooks/04_lightgcn_hg.ipynb`](../../variants/hriday/notebooks/04_lightgcn_hg.ipynb).
 
 ## Vanilla vs HG (instructor's day-10 vanilla-vs-enhanced ask)
 

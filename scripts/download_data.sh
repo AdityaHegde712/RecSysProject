@@ -88,8 +88,10 @@ download_full() {
     echo "  Download complete. No extraction needed."
     echo "  The preprocessing step reads directly from the zip file."
     echo ""
-    echo "  Next: sbatch scripts/run_hpc.sh run-sample  # smoke test"
-    echo "    or: sbatch scripts/run_hpc.sh run-all      # full run"
+    echo "  Next:"
+    echo "    python -m src.data.preprocess --kcore 20    # 20-core filter + parquet"
+    echo "    python -m src.data.split --kcore 20         # train/val/test split"
+    echo "  (HPC layer at extras/hpc/run_hpc.sh available as an alternative.)"
 }
 
 # ─── Dispatch ─────────────────────────────────────────────────────────
@@ -102,9 +104,7 @@ case "$MODE" in
         echo "  Downloads HotelRec zip from SWITCHdrive (~50GB)."
         echo "  No extraction needed — preprocess_zip.py streams from the zip."
         echo ""
-        echo "  For a quick smoke test with a subset:"
-        echo "    sbatch scripts/run_hpc.sh run-sample"
-        echo "  (uses --max-reviews 500000 internally)"
+        echo "  For a quick smoke test with a subset, run preprocess.py with --max-reviews 500000."
         exit 1
         ;;
 esac
