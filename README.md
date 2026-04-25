@@ -56,7 +56,8 @@ We use the **20-core** subset (users and items with ≥ 20 interactions each).
 │   ├── train_gmf.py             # GMF trainer
 │   ├── train_lightgcn_hg.py     # LightGCN-HG trainer
 │   ├── train_sasrec.py          # SASRec trainer
-│   └── train_neumf_attn.py      # NeuMF-Attn trainer
+│   ├── train_neumf_attn.py      # NeuMF-Attn trainer
+│   └── phase3_meta_ensemble.py  # Phase 3 LightGBM meta-learner over 4 base models
 │
 ├── variants/                    # Phase 2: one folder per team member
 │   ├── hriday/                  # SASRec (primary) + LightGCN-HG (secondary)
@@ -100,7 +101,8 @@ We use the **20-core** subset (users and items with ≥ 20 interactions each).
 │   ├── text_ncf/                # Pramod's TextNCF family (base + summary;
 │   │                            #  see results/text_ncf_{mt,subrating,gmf_only,text_only}/ too)
 │   ├── neumf_attn/              # Aditya's NeuMF-Attn enhanced
-│   └── neumf_vanilla/           # Aditya's NeuMF vanilla ablation
+│   ├── neumf_vanilla/           # Aditya's NeuMF vanilla ablation
+│   └── phase3_meta/             # LightGBM meta-ensemble (Phase 3)
 └── data/                        # (gitignored) Raw & processed data
 ```
 
@@ -150,7 +152,11 @@ python scripts/encode_text.py --kcore 20 --device cuda
 python scripts/fit_itemknn.py --kcore 20          # input to ensemble + two-stage
 bash scripts/run_text_ncf_all.sh
 
-# 11. RMSE for all models (NeuMF-Attn saves its own rating_metrics.json in-script)
+# 11. Phase 3 — LightGBM meta-ensemble over the 4 best Phase-2 variants
+#    (~2 min on GPU; needs the four checkpoints from steps 7-10 above)
+python -m src.phase3_meta_ensemble --kcore 20
+
+# 12. RMSE for all models (NeuMF-Attn + Phase 3 save their own rating_metrics.json in-script)
 python scripts/compute_rmse.py --kcore 20 \
     --gmf-ckpt results/gmf/best_model.pt --gmf-dim 64 \
     --lightgcn-hg-ckpt results/lightgcn_hg/best_model_L1_d256_grc.pt \
@@ -189,6 +195,7 @@ Following He et al. (2017):
 | Vanilla LightGCN (Hriday, bipartite) | 0.6414 | 0.7532 | 0.8612 | 0.5315 | 0.5677 | 0.5950 |
 | LightGCN-HG (Hriday secondary, dim=256, +g_id/region/country) | 0.6460 | 0.7591 | 0.8655 | 0.5352 | 0.5718 | 0.5988 |
 | **SASRec (Hriday primary, dim=128, L=2)** | **0.8502** | **0.8808** | **0.9173** | **0.8294** | **0.8392** | **0.8484** |
+| Phase 3 — LGBMRanker meta-ensemble | 0.6600 | 0.7739 | 0.8782 | 0.5474 | 0.5843 | 0.6107 |
 
 **Rating-prediction metrics** (lower is better):
 
@@ -205,8 +212,9 @@ Following He et al. (2017):
 | Vanilla LightGCN (Hriday, calibrated) | 0.9312 | 0.7025 |
 | LightGCN-HG (Hriday, calibrated) | 0.9312 | 0.7025 |
 | SASRec (Hriday, calibrated) | 0.9315 | 0.7048 |
+| **Phase 3 meta-ensemble** (calibrated) | **0.8350** | **0.6164** |
 
-Ranking-trained models (BPR) all land at RMSE ≈ 0.93 - the calibration slope is near zero because BPR scores encode pairwise ranking, not rating levels. Popularity wins RMSE because 78% of HotelRec ratings are 4–5 stars, so item-mean is near-optimal on this rating distribution.
+Ranking-trained models (BPR) all land at RMSE ≈ 0.93 - the calibration slope is near zero because BPR scores encode pairwise ranking, not rating levels. Popularity wins RMSE because 78% of HotelRec ratings are 4–5 stars, so item-mean is near-optimal on this rating distribution. The Phase 3 LGBMRanker meta-ensemble is the **only ranking-trained pipeline that beats Popularity on RMSE** (0.8350 vs 0.8685) — its blended score has more usable variance for an lstsq calibrator than any single BPR base model. On ranking, however, the meta-ensemble lands well below SASRec alone — the strong-model dilution effect under naïve per-user normalisation. Full discussion in [`results/phase3_meta/summary.md`](results/phase3_meta/summary.md).
 
 See [`results/sasrec/summary.md`](results/sasrec/summary.md), [`results/lightgcn_hg/summary.md`](results/lightgcn_hg/summary.md), [`results/text_ncf/summary.md`](results/text_ncf/summary.md), and [`results/neumf_attn/summary.md`](results/neumf_attn/summary.md) for the full variant writeups. Pramod's summary also documents two instructive negative results — a collapsed sub-rating attention head and a per-variant ensemble that degenerated to ItemKNN — that motivate the Phase 3 meta-ensemble.
 
@@ -220,9 +228,31 @@ See [`results/sasrec/summary.md`](results/sasrec/summary.md), [`results/lightgcn
 | Aditya | **NeuMF-Attn** (vanilla + enhanced) | NeuMF backbone (GMF + MLP) with an optional per-user attention layer over six sub-rating aspects. Vanilla HR@10 = 0.7254, enhanced 0.7245 — attention head adds ~0 on this dataset. |
 | Pramod | **TextNCF — Multi-Task** (best of family) | Frozen MiniLM review embeddings fused with GMF branch; MT head adds a rating-MSE regulariser (α=0.7) — NDCG@10 = 0.5097 |
 
-## Phase 3 Integration (planned)
+## Phase 3 Integration
 
-All three variants will feed into a **LightGBM meta-learner** trained on out-of-fold predictions from each base model, as the final submission model. Per-variant ensembles (e.g. with ItemKNN) are out of scope - the integration is done at the meta-learner level across all variants.
+Implemented as a `LGBMRanker` (lambdarank objective) over per-user
+min-max normalised scores from the four headline models — SASRec
+(Hriday primary), LightGCN-HG (Hriday secondary), NeuMF-Attn (Aditya
+enhanced), TextNCF Multi-Task (Pramod enhanced). Trained on val
+(1+99 candidates per user, label = held-out positive), evaluated on test.
+
+**Mixed result, both findings worth reporting:**
+
+- **Ranking:** the meta-ensemble lands at HR@10 = 0.7739 / NDCG@10 = 0.5843
+  — better than every non-sequential base model, but ~10pp below SASRec
+  alone. Strong-model dilution under naïve per-user normalisation: split-
+  gain feature importance (`text_ncf_mt` 2582 ≥ `neumf_attn` 2419 ≥
+  `lightgcn_hg` 2345 ≥ `sasrec` 1654) confirms the LGBMRanker treats all
+  four columns democratically once they're squashed to `[0, 1]`.
+- **Rating:** the meta-ensemble's calibrated RMSE = 0.8350, MAE = 0.6164.
+  Slope a = 0.0261 (~30× any single BPR base model), beating Popularity
+  (0.8685) and every individual variant. The blend's varied output
+  distribution gives the lstsq calibrator material to work with that no
+  single BPR ranker provides.
+
+Full walkthrough + feature-importance plot + future-work suggestions in
+[`notebooks/05_ensemble_and_summary.ipynb`](notebooks/05_ensemble_and_summary.ipynb)
+and [`results/phase3_meta/summary.md`](results/phase3_meta/summary.md).
 
 ---
 
