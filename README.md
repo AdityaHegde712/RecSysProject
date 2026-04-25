@@ -131,8 +131,9 @@ python -m src.train_gmf --config configs/gmf.yaml --kcore 20
 # 6. Hotel metadata (for LightGCN-HG; read-only pass over item2id.json)
 python -m scripts.extract_hotel_meta --kcore 20
 
-# 7. LightGCN-HG (secondary variant, ~53 min on GPU)
-python -m src.train_lightgcn_hg --config configs/lightgcn_hg.yaml --kcore 20
+# 7. LightGCN — vanilla bipartite + HG augmentation (Hriday secondary variant, ~50 min each)
+python -m src.train_lightgcn_hg --config configs/lightgcn_hg.yaml --kcore 20 --tiers none  # vanilla
+python -m src.train_lightgcn_hg --config configs/lightgcn_hg.yaml --kcore 20               # HG (g_id+region+country)
 
 # 8. SASRec (primary variant, ~15 min on GPU)
 python -m src.train_sasrec --config configs/sasrec.yaml --kcore 20
@@ -181,11 +182,13 @@ Following He et al. (2017):
 | Popularity | 0.3150 | 0.4215 | 0.5538 | 0.2318 | 0.2662 | 0.2995 |
 | GMF | 0.5553 | 0.6685 | 0.7936 | 0.4498 | 0.4863 | 0.5179 |
 | ItemKNN (k=20) | 0.6835 | 0.6870 | 0.7091 | 0.6082 | 0.6093 | 0.6150 |
-| TextNCF — Multi-Task (Pramod) | 0.5742 | 0.6864 | 0.8031 | 0.4734 | 0.5097 | 0.5392 |
+| Vanilla TextNCF (Pramod, base two-branch hybrid) | 0.5688 | 0.6787 | 0.7951 | 0.4702 | 0.5057 | 0.5351 |
+| TextNCF — Multi-Task (Pramod, enhanced) | 0.5742 | 0.6864 | 0.8031 | 0.4734 | 0.5097 | 0.5392 |
 | Vanilla NeuMF (Aditya) | 0.5978 | 0.7254 | 0.8468 | 0.4815 | 0.5228 | 0.5536 |
 | NeuMF-Attn (Aditya, enhanced) | 0.5970 | 0.7245 | 0.8465 | 0.4809 | 0.5221 | 0.5530 |
-| LightGCN-HG (secondary, dim=256) | 0.6460 | 0.7591 | 0.8655 | 0.5352 | 0.5718 | 0.5988 |
-| **SASRec (primary, dim=128, L=2)** | **0.8502** | **0.8808** | **0.9173** | **0.8294** | **0.8392** | **0.8484** |
+| Vanilla LightGCN (Hriday, bipartite) | 0.6414 | 0.7532 | 0.8612 | 0.5315 | 0.5677 | 0.5950 |
+| LightGCN-HG (Hriday secondary, dim=256, +g_id/region/country) | 0.6460 | 0.7591 | 0.8655 | 0.5352 | 0.5718 | 0.5988 |
+| **SASRec (Hriday primary, dim=128, L=2)** | **0.8502** | **0.8808** | **0.9173** | **0.8294** | **0.8392** | **0.8484** |
 
 **Rating-prediction metrics** (lower is better):
 
@@ -195,11 +198,13 @@ Following He et al. (2017):
 | **Popularity** (item mean) | **0.8685** | **0.6749** |
 | ItemKNN (k=20, weighted neighbors) | 0.9590 | 0.7094 |
 | GMF (calibrated) | 0.9302 | 0.7002 |
-| TextNCF — Multi-Task (calibrated) | 0.9304 | 0.7035 |
-| Vanilla NeuMF (calibrated) | 0.9304 | 0.7035 |
-| NeuMF-Attn / enhanced (calibrated) | 0.9304 | 0.7032 |
-| LightGCN-HG (calibrated) | 0.9312 | 0.7025 |
-| SASRec (calibrated) | 0.9315 | 0.7048 |
+| Vanilla TextNCF (Pramod, calibrated) | 0.9306 | 0.7014 |
+| TextNCF — Multi-Task (Pramod, calibrated) | 0.9304 | 0.7035 |
+| Vanilla NeuMF (Aditya, calibrated) | 0.9304 | 0.7035 |
+| NeuMF-Attn (Aditya, calibrated) | 0.9304 | 0.7032 |
+| Vanilla LightGCN (Hriday, calibrated) | 0.9312 | 0.7025 |
+| LightGCN-HG (Hriday, calibrated) | 0.9312 | 0.7025 |
+| SASRec (Hriday, calibrated) | 0.9315 | 0.7048 |
 
 Ranking-trained models (BPR) all land at RMSE ≈ 0.93 - the calibration slope is near zero because BPR scores encode pairwise ranking, not rating levels. Popularity wins RMSE because 78% of HotelRec ratings are 4–5 stars, so item-mean is near-optimal on this rating distribution.
 
