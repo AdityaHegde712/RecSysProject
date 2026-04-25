@@ -31,13 +31,15 @@ results/*
 !results/text_ncf_subrating/
 !results/neumf_attn/
 !results/neumf_vanilla/
+!results/phase3_meta/
 logs/
 checkpoints/
 
-# Model weights
+# Model weights / large artefacts
 *.pt
 *.pth
 *.pkl
+*.npz
 
 # OS
 .DS_Store
