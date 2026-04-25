@@ -59,6 +59,7 @@ class NeuMF_Attn(nn.Module):
         mlp_layers: list[int] = None,
         dropout: float = 0.2,
         item_aspects: torch.Tensor | None = None,
+        use_attention: bool = True,
     ):
         super().__init__()
 
@@ -67,6 +68,7 @@ class NeuMF_Attn(nn.Module):
 
         self.gmf_dim = gmf_dim
         self.mlp_dim = mlp_dim
+        self.use_attention = use_attention
 
         # ---- GMF branch embeddings ----------------------------------------
         self.gmf_user_emb = nn.Embedding(n_users, gmf_dim)
@@ -90,26 +92,29 @@ class NeuMF_Attn(nn.Module):
         # Per-user attention weights over N_ASPECTS sub-rating dimensions.
         # We project the user's GMF embedding to N_ASPECTS scores (before
         # softmax) so the attention is user-specific and learned end-to-end.
-        self.attn_proj = nn.Linear(gmf_dim, N_ASPECTS, bias=True)
+        # Only instantiated when use_attention=True so the vanilla ablation
+        # drops the parameters entirely (cleaner than zeroing them at runtime).
+        if use_attention:
+            self.attn_proj = nn.Linear(gmf_dim, N_ASPECTS, bias=True)
 
-        # Frozen (non-gradient) lookup table for item aspect vectors.
-        # Registered as a buffer so it moves with .to(device) calls.
-        if item_aspects is not None:
-            assert item_aspects.shape == (n_items, N_ASPECTS), (
-                f"item_aspects shape mismatch: expected ({n_items}, {N_ASPECTS}), "
-                f"got {tuple(item_aspects.shape)}"
-            )
-            self.register_buffer("item_aspects", item_aspects.float())
-        else:
-            # Zero fallback if aspects not provided (graceful degradation).
-            self.register_buffer(
-                "item_aspects", torch.zeros(n_items, N_ASPECTS, dtype=torch.float)
-            )
+            # Frozen (non-gradient) lookup table for item aspect vectors.
+            # Registered as a buffer so it moves with .to(device) calls.
+            if item_aspects is not None:
+                assert item_aspects.shape == (n_items, N_ASPECTS), (
+                    f"item_aspects shape mismatch: expected ({n_items}, {N_ASPECTS}), "
+                    f"got {tuple(item_aspects.shape)}"
+                )
+                self.register_buffer("item_aspects", item_aspects.float())
+            else:
+                # Zero fallback if aspects not provided (graceful degradation).
+                self.register_buffer(
+                    "item_aspects", torch.zeros(n_items, N_ASPECTS, dtype=torch.float)
+                )
 
         # ---- Fusion layer -------------------------------------------------
         # Concatenate GMF output (gmf_dim), MLP output (mlp_output_dim),
-        # and the scalar quality score (1).
-        fusion_in = gmf_dim + mlp_output_dim + 1
+        # and — when the attention branch is on — the scalar quality score (1).
+        fusion_in = gmf_dim + mlp_output_dim + (1 if use_attention else 0)
         self.fusion = nn.Linear(fusion_in, 1, bias=True)
 
         self._init_weights()
@@ -121,8 +126,9 @@ class NeuMF_Attn(nn.Module):
         for emb in (self.gmf_user_emb, self.gmf_item_emb,
                     self.mlp_user_emb, self.mlp_item_emb):
             nn.init.normal_(emb.weight, std=0.02)
-        nn.init.xavier_uniform_(self.attn_proj.weight)
-        nn.init.zeros_(self.attn_proj.bias)
+        if self.use_attention:
+            nn.init.xavier_uniform_(self.attn_proj.weight)
+            nn.init.zeros_(self.attn_proj.bias)
         nn.init.xavier_uniform_(self.fusion.weight)
         nn.init.zeros_(self.fusion.bias)
         for layer in self.mlp:
@@ -164,8 +170,11 @@ class NeuMF_Attn(nn.Module):
         """Fused scalar relevance score for (user, item) pairs. Shape: (B,)."""
         gmf = self._gmf_out(users, items)          # (B, gmf_dim)
         mlp = self._mlp_out(users, items)          # (B, mlp_out)
-        qs = self._quality_score(users, items)     # (B, 1)
-        fused = torch.cat([gmf, mlp, qs], dim=-1) # (B, gmf+mlp+1)
+        if self.use_attention:
+            qs = self._quality_score(users, items)     # (B, 1)
+            fused = torch.cat([gmf, mlp, qs], dim=-1)  # (B, gmf+mlp+1)
+        else:
+            fused = torch.cat([gmf, mlp], dim=-1)      # (B, gmf+mlp)
         return self.fusion(fused).squeeze(-1)      # (B,)
 
     # ------------------------------------------------------------------

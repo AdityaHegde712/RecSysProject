@@ -15,14 +15,15 @@ that dimension across train rows that have at least one non-null value.
 Uses the same 1-vs-99 eval protocol as every other model in this repo:
 score the positive + 99 negatives, rank by score, compute HR@k and NDCG@k.
 
-Writes:
-    results/neumf_attn/test_metrics_gmf{g}_mlp{m}.json
-    results/neumf_attn/rating_metrics_gmf{g}_mlp{m}.json
-    results/neumf_attn/best_model_gmf{g}_mlp{m}.pt
-    logs/neumf_attn/metrics_gmf{g}_mlp{m}.csv
+Writes (same pattern when use_attention=False — see configs/neumf_vanilla.yaml):
+    results/<checkpoint_dir>/test_metrics_gmf{g}_mlp{m}.json
+    results/<checkpoint_dir>/rating_metrics_gmf{g}_mlp{m}.json
+    results/<checkpoint_dir>/best_model_gmf{g}_mlp{m}.pt
+    logs/<log_dir>/metrics_gmf{g}_mlp{m}.csv
 
 Usage:
-    python -m src.train_neumf_attn --config configs/neumf_attn.yaml --kcore 20
+    python -m src.train_neumf_attn --config configs/neumf_attn.yaml    --kcore 20   # enhanced (default)
+    python -m src.train_neumf_attn --config configs/neumf_vanilla.yaml --kcore 20   # vanilla ablation
 """
 
 from __future__ import annotations
@@ -346,10 +347,11 @@ def train(config: dict, kcore_dir: str):
     device = pick_device()
 
     # ---- Hyper-parameters --------------------------------------------------
-    gmf_dim    = int(model_cfg.get("gmf_dim", 64))
-    mlp_dim    = int(model_cfg.get("mlp_dim", 64))
-    mlp_layers = list(model_cfg.get("mlp_layers", [256, 128, 64]))
-    dropout    = float(model_cfg.get("dropout", 0.2))
+    gmf_dim       = int(model_cfg.get("gmf_dim", 64))
+    mlp_dim       = int(model_cfg.get("mlp_dim", 64))
+    mlp_layers    = list(model_cfg.get("mlp_layers", [256, 128, 64]))
+    dropout       = float(model_cfg.get("dropout", 0.2))
+    use_attention = bool(model_cfg.get("use_attention", True))
 
     # ---- DataLoaders -------------------------------------------------------
     loaders = get_neumf_dataloaders(
@@ -367,8 +369,14 @@ def train(config: dict, kcore_dir: str):
           f"train batches={len(loaders['train'])}")
 
     # ---- Sub-rating aspect vectors (train-only, no leakage) ---------------
-    print("Building item aspect vectors from train split...")
-    item_aspects = build_item_aspects(train_df, n_items).to(device)
+    # Skipped when use_attention is False — the vanilla ablation doesn't
+    # touch the aspect columns at all.
+    if use_attention:
+        print("Building item aspect vectors from train split...")
+        item_aspects = build_item_aspects(train_df, n_items).to(device)
+    else:
+        print("use_attention=False — vanilla NeuMF ablation (no aspect matrix).")
+        item_aspects = None
 
     # ---- Model -------------------------------------------------------------
     model = NeuMF_Attn(
@@ -379,10 +387,12 @@ def train(config: dict, kcore_dir: str):
         mlp_layers=mlp_layers,
         dropout=dropout,
         item_aspects=item_aspects,
+        use_attention=use_attention,
     ).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"Device: {device} | gmf_dim={gmf_dim} | mlp_dim={mlp_dim} "
-          f"| mlp_layers={mlp_layers} | params={n_params:,}")
+          f"| mlp_layers={mlp_layers} | use_attention={use_attention} "
+          f"| params={n_params:,}")
 
     # ---- Optimiser & scheduler --------------------------------------------
     lr  = float(train_cfg.get("lr", 1e-3))
@@ -488,6 +498,7 @@ def train(config: dict, kcore_dir: str):
     test_m["gmf_dim"]      = gmf_dim
     test_m["mlp_dim"]      = mlp_dim
     test_m["mlp_layers"]   = mlp_layers
+    test_m["use_attention"] = use_attention
     test_m["total_train_time_s"] = round(time.time() - t0, 2)
 
     print("\n" + "=" * 72)
@@ -509,6 +520,7 @@ def train(config: dict, kcore_dir: str):
     rating_m["gmf_dim"]    = gmf_dim
     rating_m["mlp_dim"]    = mlp_dim
     rating_m["mlp_layers"] = mlp_layers
+    rating_m["use_attention"] = use_attention
 
     rating_metrics_path = os.path.join(ckpt_dir, f"rating_metrics_{run_suffix}.json")
     with open(rating_metrics_path, "w") as f:

@@ -30,6 +30,7 @@ results/*
 !results/text_ncf_mt/
 !results/text_ncf_subrating/
 !results/neumf_attn/
+!results/neumf_vanilla/
 logs/
 checkpoints/
 
