@@ -38,6 +38,24 @@ LightGCN-HG and every baseline, even at a 5-minute training budget.
 Scaled up to dim=128 / 30 epochs, SASRec reaches HR@10=0.8808 and
 NDCG@10=0.8392 - beating ItemKNN by +28 % and +38 % relative.
 
+**Sequential bakeoff** (matched dim=64 / 8 epochs, 1-vs-99 eval):
+
+| Model | HR@10 | NDCG@10 | Notes |
+|---|---|---|---|
+| GRU4Rec (Hidasi et al., 2016) | 0.49 | 0.29 | recurrent next-item predictor |
+| Mult-VAE (Liang et al., 2018) | 0.46 | 0.29 | multinomial VAE on user×item matrix |
+| **SASRec (Kang & McAuley, 2018)** | **0.83** | **0.78** | **chosen** |
+
+SASRec wins by >2× HR@10 and ~3× NDCG@10 at the same compute. **BERT4Rec
+not implemented** — Petrov & Macdonald (RecSys 2022, *A Systematic Review
+and Replicability Study of BERT4Rec for Sequential Recommendation*) found
+BERT4Rec doesn't consistently beat SASRec under normalised eval, and
+bidirectional masked-LM is awkward for the "predict next future booking"
+framing on hotel data. Cited the literature instead of running a fourth
+model the published replication expects to lose. Bakeoff narrative + full
+references in [`notebooks/06_sasrec.ipynb`](notebooks/06_sasrec.ipynb)
+Section 1.
+
 SASRec uses the `date` column (100 % coverage on the 20-core) which
 neither Aditya (NeuMF + sub-ratings) nor Pramod (Text-NCF) consumes -
 making it the best feature-rich angle for this role in the team split.
