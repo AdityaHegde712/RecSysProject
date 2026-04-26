@@ -1,11 +1,9 @@
 #!/bin/bash
 # Download HotelRec dataset
 #
-# The dataset is hosted on SWITCHdrive (Swiss academic cloud):
-#   https://drive.switch.ch/index.php/s/n48smsdufhRA7fR
+# The dataset is hosted on SWITCHdrive (Swiss academic cloud): https://drive.switch.ch/index.php/s/n48smsdufhRA7fR
 #
-# It's a single large JSON file (~10GB) containing all 50M reviews.
-# For academic research use only.
+# It's a single large JSON file (~10GB) containing all 50M reviews. 
 #
 # Usage:
 #   bash scripts/download_data.sh full     # download from SWITCHdrive
@@ -28,7 +26,7 @@ echo "Date: $(date)"
 echo "============================================"
 echo ""
 
-# ─── Full download from SWITCHdrive ──────────────────────────────────
+# Full download from SWITCHdrive
 download_full() {
     echo ">>> Downloading HotelRec dataset from SWITCHdrive..."
     echo "    Source: https://drive.switch.ch/index.php/s/n48smsdufhRA7fR"
@@ -94,7 +92,7 @@ download_full() {
     echo "  (HPC layer at extras/hpc/run_hpc.sh available as an alternative.)"
 }
 
-# ─── Dispatch ─────────────────────────────────────────────────────────
+# Dispatch 
 case "$MODE" in
     full)
         download_full
@@ -109,7 +107,7 @@ case "$MODE" in
         ;;
 esac
 
-# ─── Stats ────────────────────────────────────────────────────────────
+# Stats
 echo ""
 echo "--- Dataset stats ---"
 ZIP_FILE=$(ls "${RAW_DIR}"/*.zip 2>/dev/null | head -1)

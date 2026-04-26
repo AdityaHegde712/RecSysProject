@@ -1,23 +1,18 @@
 """
 NeuMF with Attention-Weighted Sub-Ratings (Variant B).
 
-Extends Neural Matrix Factorization (He et al., WWW 2017) with a lightweight
-per-user attention mechanism over the six hotel sub-rating dimensions
+Extends Neural Matrix Factorization (He et al., WWW 2017) with a lightweight per-user attention mechanism over the six hotel sub-rating dimensions
 (Service, Cleanliness, Location, Value, Rooms, Sleep Quality).
 
 Architecture
 ------------
 - **GMF branch**  : element-wise product of user/item GMF embeddings.
-- **MLP branch**  : concatenation of user/item MLP embeddings, passed
-  through a stack of linear → ReLU → Dropout layers.
-- **Sub-rating attention** : learns a per-user attention vector (weights)
-  over the N_ASPECTS = 6 sub-rating dimensions. The weighted average of
-  a hotel's pre-computed mean sub-ratings is concatenated to the fusion
-  layer as an extra "quality score."
-- **Fusion**       : concat(GMF_out, MLP_out, quality_score) → linear → scalar.
+- **MLP branch**  : concatenation of user/item MLP embeddings, passed through a stack of linear to ReLU to Dropout layers.
+- **Sub-rating attention** : learns a per-user attention vector (weights) over the N_ASPECTS = 6 sub-rating dimensions. The weighted average of
+  a hotel's pre-computed mean sub-ratings is concatenated to the fusion layer as an extra "quality score."
+- **Fusion**       : concat(GMF_out, MLP_out, quality_score) to linear to scalar.
 
-Training uses BPR loss (one sampled negative per interaction).
-Evaluation uses the shared 1-vs-99 ranking protocol (HR@k, NDCG@k).
+Training uses BPR loss (one sampled negative per interaction). Evaluation uses the shared 1-vs-99 ranking protocol (HR@k, NDCG@k).
 
 Usage:
     from src.models.neumf_attn import NeuMF_Attn
@@ -90,10 +85,8 @@ class NeuMF_Attn(nn.Module):
 
         # ---- Sub-rating attention -----------------------------------------
         # Per-user attention weights over N_ASPECTS sub-rating dimensions.
-        # We project the user's GMF embedding to N_ASPECTS scores (before
-        # softmax) so the attention is user-specific and learned end-to-end.
-        # Only instantiated when use_attention=True so the vanilla ablation
-        # drops the parameters entirely (cleaner than zeroing them at runtime).
+        # We project the user's GMF embedding to N_ASPECTS scores (before softmax) so the attention is user-specific and learned end-to-end.
+        # Only instantiated when use_attention=True so the vanilla ablation drops the parameters entirely (cleaner than zeroing them at runtime).
         if use_attention:
             self.attn_proj = nn.Linear(gmf_dim, N_ASPECTS, bias=True)
 
@@ -111,9 +104,8 @@ class NeuMF_Attn(nn.Module):
                     "item_aspects", torch.zeros(n_items, N_ASPECTS, dtype=torch.float)
                 )
 
-        # ---- Fusion layer -------------------------------------------------
-        # Concatenate GMF output (gmf_dim), MLP output (mlp_output_dim),
-        # and - when the attention branch is on - the scalar quality score (1).
+        # Fusion layer
+        # Concatenate GMF output (gmf_dim), MLP output (mlp_output_dim), and when the attention branch is on, the scalar quality score (1).
         fusion_in = gmf_dim + mlp_output_dim + (1 if use_attention else 0)
         self.fusion = nn.Linear(fusion_in, 1, bias=True)
 

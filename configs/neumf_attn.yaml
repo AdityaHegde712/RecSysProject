@@ -1,8 +1,6 @@
 # Variant B: NeuMF with Attention-Weighted Sub-Ratings
-#
 # Hyperparameters tuned for the HotelRec 20-core split.
-# Sub-rating aspect vectors are pre-computed from train.parquet and
-# cached at runtime to avoid data leakage from val/test splits.
+# Sub-rating aspect vectors are pre-computed from train.parquet and cached at runtime to avoid data leakage from val/test splits.
 
 model:
   name: neumf_attn
@@ -13,16 +11,14 @@ model:
 
 training:
   epochs: 50                     # reduced from 1000: per-epoch cost on a single
-                                 # RTX 5070 Ti is ~2 min (23k batches, 4 negs, MLP
-                                 # + attention) and the attention branch plateaus
-                                 # well before 50; patience below early-stops sooner.
+                                 # RTX 5070 Ti is ~2 min (23k batches, 4 negs, MLP + attention) and the attention branch plateaus
+                                 # well before 50. Patience below early-stops sooner.
   batch_size: 256
   lr: 1.0e-3
   optimizer: adam
   weight_decay: 1.0e-4           # Stronger L2 regularisation.
-  patience: 10                   # longer than SASRec/TextNCF (patience 5) because
-                                 # the attention head is slow to saturate; shorter
-                                 # than the original 30 to keep wall-clock bounded.
+  patience: 10                   # longer than SASRec/TextNCF (patience 5) because the attention head is slow to saturate
+                                 # Shorter than the original 30 to keep wall-clock bounded.
 
 scheduler:
   type: cosine
@@ -33,7 +29,7 @@ negative_sampling:
 
 evaluation:
   top_k: [5, 10, 20]
-  num_negatives: 99 # 1-vs-99 protocol.
+  num_negatives: 99
 
 # Sub-rating columns present in the parquets (train split only).
 sub_ratings:

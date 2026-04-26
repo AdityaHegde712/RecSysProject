@@ -1,14 +1,10 @@
 """
 Torch-free graph construction for LightGCN-HG.
 
-Living under ``src/graph/`` (not ``src/models/``) so importing it doesn't
-trigger ``src.models.__init__``, which eagerly imports every model and
-therefore torch. This lets notebooks inspect graph structure in an
-environment where torch can't load -- e.g. a kernel started while another
-GPU process holds the CUDA DLL on Windows.
+Living under ``src/graph/`` (not ``src/models/``) so importing it doesn't trigger ``src.models.__init__``, which eagerly imports every model and
+therefore torch. This lets notebooks inspect graph structure in an environment where torch can't load (e.g. a kernel started while another GPU process holds the CUDA DLL on Windows.)
 
-``src/models/lightgcn_hg.py`` imports and wraps these functions to
-produce its torch sparse tensor.
+``src/models/lightgcn_hg.py`` imports and wraps these functions to produce its torch sparse tensor.
 """
 
 from __future__ import annotations

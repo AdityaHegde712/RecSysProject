@@ -3,8 +3,7 @@ Train Sub-Rating Decomposition TextNCF on HotelRec.
 
 Loss: beta * BPR_loss + (1 - beta) * mean(MSE per sub-rating)
 
-The BPR part trains the combined attention-weighted score.
-The MSE part trains each of the 6 sub-rating heads individually.
+The BPR part trains the combined attention-weighted score. The MSE part trains each of the 6 sub-rating heads individually.
 
 Usage:
     python -m src.train_text_ncf_subrating \

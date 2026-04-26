@@ -1,10 +1,8 @@
 """
 Train SASRec (Kang & McAuley, ICDM 2018) on HotelRec.
 
-Uses the sequential dataloader from ``src/data/sequential.py`` and the
-SASRec model from ``src/models/sasrec.py``. Trained with BPR loss over
-sampled negatives at each position, evaluated on the shared 1-vs-99
-protocol. Writes:
+Uses the sequential dataloader from ``src/data/sequential.py`` and the SASRec model from ``src/models/sasrec.py``. Trained with BPR loss over
+sampled negatives at each position, evaluated on the shared 1-vs-99 protocol. Writes:
 
     results/sasrec/test_metrics_d{dim}_L{K}.json
     results/sasrec/rating_metrics_d{dim}_L{K}.json
@@ -40,10 +38,7 @@ from src.utils.metrics_logger import MetricsLogger
 from src.utils.seed import set_seed
 
 
-# ---------------------------------------------------------------------------
 # Ranking evaluator (SASRec needs the full sequence, not just (u, i))
-# ---------------------------------------------------------------------------
-
 def sasrec_rank_eval(
     model,
     loader,
@@ -71,10 +66,7 @@ def sasrec_rank_eval(
     return {k: v / max(n, 1) for k, v in metrics.items()}
 
 
-# ---------------------------------------------------------------------------
-# Score → rating calibration for SASRec (same linear fit as LightGCN path)
-# ---------------------------------------------------------------------------
-
+# Score to rating calibration for SASRec (same linear fit as LightGCN path)
 def calibrate_sasrec(model, sequences, max_seqlen, device, val_df, test_df):
     """Score arbitrary (u, i) pairs via SASRec's last-position + candidate
     embedding, fit linear rating = a*score + b on val, evaluate on test.
@@ -142,10 +134,8 @@ def calibrate_sasrec(model, sequences, max_seqlen, device, val_df, test_df):
     return out
 
 
-# ---------------------------------------------------------------------------
-# Trainer
-# ---------------------------------------------------------------------------
 
+# Trainer
 def pick_device() -> torch.device:
     dev = torch.device("cpu")
     if torch.cuda.is_available():

@@ -1,17 +1,12 @@
 """
 Extract hotel geographic metadata from TripAdvisor URLs in item2id.json.
 
-Writes a small parquet under data/processed/hotel_meta/hotel_meta.parquet with
-one row per item in the 20-core subset. Does NOT touch data/processed/20core/.
+Writes a small parquet under data/processed/hotel_meta/hotel_meta.parquet with one row per item in the 20-core subset. Does NOT touch data/processed/20core/.
 
-TripAdvisor hotel URLs have the form:
+TripAdvisor hotel URLs have the form: Hotel_Review-g{geo_id}-d{hotel_id}-Reviews-{name}-{location}.html
 
-    Hotel_Review-g{geo_id}-d{hotel_id}-Reviews-{name}-{location}.html
-
-where {geo_id} is TripAdvisor's leaf-location identifier (1 per city/area) and
-{location} is an underscore-separated "City_Region[_Country]" slug whose last
-1-2 tokens serve as a coarser regional pivot for hotels that are the only
-entry in their g_id.
+where {geo_id} is TripAdvisor's leaf-location identifier (1 per city/area) and {location} is an underscore-separated "City_Region[_Country]" slug whose last
+1-2 tokens serve as a coarser regional pivot for hotels that are the only entry in their g_id.
 
 Output columns
 --------------
@@ -57,12 +52,9 @@ def parse_url(url: str):
 def region_and_country(location_slug: str) -> tuple[str, str]:
     """Coarser pivots derived from the location slug.
 
-    Heuristic: TripAdvisor orders slug tokens from finest (city) to coarsest
-    (region/country). So the last 2 tokens give a region-level pivot and the
-    last 1 gives a country/state-level pivot. Not perfect across countries
-    (e.g. "Ile_de_France" is one region but 3 tokens) but consistent enough
-    to share pivots among nearby hotels. Falls back to the full slug when
-    there are fewer tokens.
+    Heuristic: TripAdvisor orders slug tokens from finest (city) to coarsest (region/country). So the last 2 tokens give a region-level pivot and the
+    last 1 gives a country/state-level pivot. Not perfect across countries (e.g. "Ile_de_France" is one region but 3 tokens) but consistent enough
+    to share pivots among nearby hotels. Falls back to the full slug when there are fewer tokens.
     """
     tokens = location_slug.split("_")
     if not tokens:
@@ -117,13 +109,13 @@ def main():
 
     df = pd.DataFrame(rows).sort_values("item_id").reset_index(drop=True)
 
-    # Sanity: item_id should be 0..n-1 contiguous (the processed data invariant).
+    # Sanity: item_id should be 0..n-1 contiguous (the processed data invariant)
     expected = set(range(len(item2id)))
     missing = expected - set(df["item_id"])
     if missing:
         raise RuntimeError(f"Missing item_ids: {sorted(list(missing))[:10]}...")
 
-    # Summary stats -- useful for the notebook narrative.
+    # Summary stats
     stats = {
         "n_hotels": int(len(df)),
         "n_parse_failures": int(len(fail)),

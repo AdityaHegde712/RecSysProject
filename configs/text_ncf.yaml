@@ -1,8 +1,7 @@
 # Review-text-enhanced Neural Collaborative Filtering (TextNCF)
 #
-# Two-branch hybrid: GMF (collaborative) + text (sentence embeddings)
-# fused through a small MLP. Text embeddings are pre-computed offline
-# with all-MiniLM-L6-v2 and stored as .npy files.
+# Two-branch hybrid: GMF (collaborative) + text (sentence embeddings) fused through a small MLP. 
+# Text embeddings are pre-computed offline with all-MiniLM-L6-v2 and stored as .npy files.
 
 model:
   name: text_ncf

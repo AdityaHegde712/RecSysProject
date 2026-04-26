@@ -4,11 +4,9 @@ Compute RMSE / MAE on the held-out test set.
 Two paths:
   1. Native rating prediction  (ItemKNN, Popularity):
        ItemKNN    : weighted average of training ratings over top-k similar items.
-       Popularity : predicted rating = mean training rating of the item
-                    (falls back to global mean if item unseen in train).
-  2. Score calibration         (GMF, LightGCN-HG, SASRec -- ranking-only):
-       fits a linear map  rating = a*score + b  on the validation split,
-       then reports rmse_calibrated / mae_calibrated on test.
+       Popularity : predicted rating = mean training rating of the item (falls back to global mean if item unseen in train).
+  2. Score calibration         (GMF, LightGCN-HG, SASRec -- ranking-only): fits a linear map  rating = a*score + b  on the 
+        validation split, then reports rmse_calibrated / mae_calibrated on test.
 
 Writes:
   results/baselines/rating_metrics_20core.json
@@ -18,8 +16,7 @@ Writes:
   results/text_ncf_mt/rating_metrics.json           (if --text-ncf-mt-ckpt given)
   results/text_ncf_subrating/rating_metrics.json    (if --text-ncf-subrating-ckpt given)
 
-SASRec's calibrated RMSE is produced directly by src/train_sasrec.py
-alongside its training run, so it isn't re-computed here.
+SASRec's calibrated RMSE is produced directly by src/train_sasrec.py alongside its training run, so it isn't re-computed here.
 
 Usage:
   python scripts/compute_rmse.py --kcore 20
@@ -39,7 +36,6 @@ import os
 import sys
 from pathlib import Path
 
-# Allow running as a plain script: `python scripts/compute_rmse.py`
 _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
@@ -58,12 +54,8 @@ from src.models.knn import ItemKNN
 from src.utils.io import load_config
 
 
-# -----------------------------------------------------------------------------
 # Rating predictors
-# -----------------------------------------------------------------------------
-
-def itemknn_predict_ratings_batch(knn: ItemKNN, users: np.ndarray, items: np.ndarray,
-                                  global_mean: float) -> np.ndarray:
+def itemknn_predict_ratings_batch(knn: ItemKNN, users: np.ndarray, items: np.ndarray, global_mean: float) -> np.ndarray:
     """Weighted-average rating prediction for ItemKNN over training neighbors.
 
     r_hat(u,i) = sum_{j in N(i) intersect H(u)} sim(i,j) * r(u,j)
@@ -106,16 +98,11 @@ def fit_popularity_rating(train_df: pd.DataFrame, n_items: int) -> tuple[np.ndar
     return arr, global_mean
 
 
-def popularity_predict_ratings(item_mean: np.ndarray, items: np.ndarray,
-                               global_mean: float) -> np.ndarray:
+def popularity_predict_ratings(item_mean: np.ndarray, items: np.ndarray, global_mean: float) -> np.ndarray:
     preds = item_mean[items].astype(np.float32)
     preds = np.where(np.isfinite(preds), preds, global_mean)
     return np.clip(preds, 1.0, 5.0)
 
-
-# -----------------------------------------------------------------------------
-# Main
-# -----------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser()
@@ -174,7 +161,7 @@ def main():
     test_users = test_df["user_id"].astype(np.int64).values
     test_items = test_df["item_id"].astype(np.int64).values
 
-    # ---- Global-mean sanity baseline ----
+    # Global-mean sanity baseline
     global_mean = float(train_df["rating"].mean())
     gm_preds = np.full_like(truths, global_mean, dtype=np.float32)
     gm = {
@@ -185,7 +172,7 @@ def main():
     }
     print(f"GlobalMean  : RMSE={gm['rmse']:.4f}  MAE={gm['mae']:.4f}")
 
-    # ---- Popularity (item-mean-rating) ----
+    # Popularity (item-mean-rating)
     item_mean, _ = fit_popularity_rating(train_df, n_items)
     pop_preds = popularity_predict_ratings(item_mean, test_items, global_mean)
     pop = {
@@ -195,11 +182,9 @@ def main():
     }
     print(f"Popularity  : RMSE={pop['rmse']:.4f}  MAE={pop['mae']:.4f}")
 
-    # ---- ItemKNN (weighted neighbor rating) ----
-    # NOTE: the 20-core split keeps multiple reviews per (user, item) when
-    # users updated their TripAdvisor reviews. The stock ItemKNN.fit() sums
-    # duplicate ratings via scipy CSR, which is harmless for ranking (relative
-    # order is preserved) but produces inflated rating predictions. For RMSE
+    # ItemKNN (weighted neighbor rating)
+    # NOTE: the 20-core split keeps multiple reviews per (user, item) when users updated their TripAdvisor reviews. The stock ItemKNN.fit() sums
+    # duplicate ratings via scipy CSR, which is harmless for ranking (relative order is preserved) but produces inflated rating predictions. For RMSE
     # only, we dedupe by taking the mean rating per (user, item) pair.
     k_neighbors = args.knn_k
     print(f"Fitting ItemKNN(k={k_neighbors}) on deduplicated train (mean per u,i)...")
@@ -225,7 +210,7 @@ def main():
         json.dump(out, f, indent=2)
     print(f"Saved: {out_path}")
 
-    # ---- GMF (calibrated score -> rating) ----
+    # GMF (calibrated score -> rating)
     if args.gmf_ckpt is not None:
         print()
         print("Computing calibrated RMSE for GMF...")
@@ -256,7 +241,7 @@ def main():
               f"(a={cal['calibration_a']:.4f}, b={cal['calibration_b']:.4f})")
         print(f"Saved: {out_gmf}")
 
-    # ---- LightGCN-HG (calibrated score -> rating) ----
+    # LightGCN-HG (calibrated score -> rating)
     if args.lightgcn_hg_ckpt is not None:
         print()
         print("Computing calibrated RMSE for LightGCN-HG ...")
@@ -323,7 +308,7 @@ def main():
               f"(a={cal['calibration_a']:.4f}, b={cal['calibration_b']:.4f})")
         print(f"Saved: {out_hg}")
 
-    # ---- TextNCF variants (calibrated score -> rating) ----
+    # TextNCF variants (calibrated score -> rating)
     _run_text_ncf_calibration(args, val_df, test_df, n_users, n_items)
 
 

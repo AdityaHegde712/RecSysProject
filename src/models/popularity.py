@@ -1,8 +1,7 @@
 """
 Popularity baseline: recommends items by global interaction frequency.
 
-No personalization -- every user gets the same ranking.
-Serves as a lower bound that any reasonable model should beat.
+No personalization -- every user gets the same ranking. Serves as a lower bound that any reasonable model should beat.
 """
 
 import numpy as np

@@ -4,8 +4,7 @@
 Run this BEFORE submitting batch jobs to catch issues early:
     python scripts/verify_env.py
 
-Checks every import used by the HotelRec codebase and reports
-all failures at once instead of one at a time.
+Checks every import used by the HotelRec codebase and reports all failures at once instead of one at a time.
 """
 
 import os

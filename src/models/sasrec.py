@@ -3,13 +3,10 @@ SASRec (Kang & McAuley, ICDM 2018): Self-Attentive Sequential Recommendation.
 
 https://arxiv.org/abs/1808.09781
 
-Causal self-attention over a user's time-ordered item history. At each
-position the model predicts the next item from the prefix up to that
+Causal self-attention over a user's time-ordered item history. At each position the model predicts the next item from the prefix up to that
 point. Trained with a BPR-style per-position loss (one sampled negative).
 
-Uses the same 1-vs-99 eval protocol as every other model in this repo:
-score the positive + 99 negatives, rank by score, compute HR@k and
-NDCG@k.
+Uses the same 1-vs-99 eval protocol as every other model in this repo: score the positive + 99 negatives, rank by score, compute HR@k and NDCG@k.
 """
 
 from __future__ import annotations

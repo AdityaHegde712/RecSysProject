@@ -47,10 +47,7 @@ def _backup_previous_run(log_dir, ckpt_dir):
             print(f"  backed up {path} → {backup}")
 
 
-# ---------------------------------------------------------------------------
 # Dataset that returns ratings alongside BPR triplets
-# ---------------------------------------------------------------------------
-
 class RatedInteractionDataset(Dataset):
     """BPR training dataset that also returns the actual rating for the
     positive item. Negative items get a rating of 0 (unobserved).

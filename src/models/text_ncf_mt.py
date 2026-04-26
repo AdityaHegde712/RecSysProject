@@ -1,10 +1,8 @@
 """
 Multi-Task TextNCF: joint ranking + rating prediction.
 
-Extends TextNCF with a rating prediction head so the model learns from
-both implicit (BPR) and explicit (MSE on ratings) signals simultaneously.
-The idea is that predicting ratings forces the model to learn finer-grained
-preferences, which should help ranking too.
+Extends TextNCF with a rating prediction head so the model learns from both implicit (BPR) and explicit (MSE on ratings) signals simultaneously.
+The idea is that predicting ratings forces the model to learn finer-grained preferences, which should help ranking too.
 
 Architecture:
     Same two-branch fusion as TextNCF, but with two output heads:

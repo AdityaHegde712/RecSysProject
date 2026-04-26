@@ -3,8 +3,6 @@
 CMPE 256 - Recommender Systems, Spring 2026
 Team: Aditya Hegde, Pramod Yadav, Hriday Ampavatina
 
----
-
 ## Overview
 
 We build and compare multiple recommender system approaches on the [HotelRec](https://github.com/Diego999/HotelRec) dataset - 50M TripAdvisor hotel reviews. The project has three phases:
@@ -12,8 +10,6 @@ We build and compare multiple recommender system approaches on the [HotelRec](ht
 1. **Shared foundation** (Phase 1): data pipeline, baselines, evaluation framework.
 2. **Individual variants** (Phase 2): each member builds one advanced method.
 3. **Integration** (Phase 3): a LightGBM meta-learner trained on out-of-fold predictions from all three variants as the final submission model.
-
----
 
 ## Dataset
 
@@ -25,9 +21,7 @@ Full-dataset stats in [`results/data_evaluation.json`](results/data_evaluation.j
 | Full | 21.9M | 365K | 50.3M | 99.999% |
 | 20-core | ~47K | ~27K | ~1.8M | 99.86% |
 
-We use the **20-core** subset (users and items with ≥ 20 interactions each).
-
----
+We use the 20-core subset (users and items with ≥ 20 interactions each).
 
 ## Repository Structure
 
@@ -109,8 +103,6 @@ We use the **20-core** subset (users and items with ≥ 20 interactions each).
 └── data/                        # (gitignored) Raw & processed data
 ```
 
----
-
 ## Quick Start
 
 ```bash
@@ -169,8 +161,6 @@ python scripts/compute_rmse.py --kcore 20 \
     --text-ncf-subrating-ckpt results/text_ncf_subrating/best_model.pt
 ```
 
----
-
 ## Evaluation Protocol
 
 Following He et al. (2017):
@@ -217,11 +207,7 @@ Following He et al. (2017):
 | SASRec (Hriday, calibrated) | 0.9315 | 0.7048 |
 | **Phase 3 meta-ensemble** (calibrated) | **0.8350** | **0.6164** |
 
-Ranking-trained models (BPR) all land at RMSE ≈ 0.93 - the calibration slope is near zero because BPR scores encode pairwise ranking, not rating levels. Popularity wins RMSE because 78% of HotelRec ratings are 4-5 stars, so item-mean is near-optimal on this rating distribution. The Phase 3 LGBMRanker meta-ensemble is the **only ranking-trained pipeline that beats Popularity on RMSE** (0.8350 vs 0.8685) - its blended score has more usable variance for an lstsq calibrator than any single BPR base model. On ranking, however, the meta-ensemble lands well below SASRec alone - the strong-model dilution effect under naïve per-user normalisation. Full discussion in [`results/phase3_meta/summary.md`](results/phase3_meta/summary.md).
-
-See [`results/sasrec/summary.md`](results/sasrec/summary.md), [`results/lightgcn_hg/summary.md`](results/lightgcn_hg/summary.md), [`results/text_ncf/summary.md`](results/text_ncf/summary.md), and [`results/neumf_attn/summary.md`](results/neumf_attn/summary.md) for the full variant writeups. Pramod's summary also documents two instructive negative results - a collapsed sub-rating attention head and a per-variant ensemble that degenerated to ItemKNN - that motivate the Phase 3 meta-ensemble.
-
----
+Ranking-trained models (BPR) all land at RMSE ≈ 0.93 - the calibration slope is near zero because BPR scores encode pairwise ranking, not rating levels. Popularity wins RMSE because 78% of HotelRec ratings are 4-5 stars, so item-mean is near-optimal on this rating distribution. The Phase 3 LGBMRanker meta-ensemble is the only ranking-trained pipeline that beats Popularity on RMSE (0.8350 vs 0.8685) - its blended score has more usable variance for an lstsq calibrator than any single BPR base model. On ranking, however, the meta-ensemble lands well below SASRec alone, the strong-model dilution effect under naïve per-user normalisation.
 
 ## Phase 2 Variants
 
@@ -233,31 +219,16 @@ See [`results/sasrec/summary.md`](results/sasrec/summary.md), [`results/lightgcn
 
 ## Phase 3 Integration
 
-Implemented as a `LGBMRanker` (lambdarank objective) over per-user
-min-max normalised scores from the four headline models - SASRec
-(Hriday primary), LightGCN-HG (Hriday secondary), NeuMF-Attn (Aditya
-enhanced), TextNCF Multi-Task (Pramod enhanced). Trained on val
-(1+99 candidates per user, label = held-out positive), evaluated on test.
+Implemented as a `LGBMRanker` (lambdarank objective) over per-user min-max normalised scores from the four headline models - SASRec (Hriday primary), LightGCN-HG (Hriday secondary), NeuMF-Attn (Aditya enhanced), TextNCF Multi-Task (Pramod enhanced). Trained on val (1+99 candidates per user, label = held-out positive), evaluated on test.
 
-**Mixed result, both findings worth reporting:**
-
+**Mixed result:**
 - **Ranking:** the meta-ensemble lands at HR@10 = 0.7739 / NDCG@10 = 0.5843
-  - better than every non-sequential base model, but ~10pp below SASRec
-  alone. Strong-model dilution under naïve per-user normalisation: split-
-  gain feature importance (`text_ncf_mt` 2582 ≥ `neumf_attn` 2419 ≥
-  `lightgcn_hg` 2345 ≥ `sasrec` 1654) confirms the LGBMRanker treats all
-  four columns democratically once they're squashed to `[0, 1]`.
-- **Rating:** the meta-ensemble's calibrated RMSE = 0.8350, MAE = 0.6164.
-  Slope a = 0.0261 (~30× any single BPR base model), beating Popularity
-  (0.8685) and every individual variant. The blend's varied output
-  distribution gives the lstsq calibrator material to work with that no
-  single BPR ranker provides.
+  - better than every non-sequential base model, but around 10pp below SASRec alone. Strong-model dilution under naïve per-user normalisation: split-
+  gain feature importance (text_ncf_mt 2582 ≥ neumf_attn 2419 ≥ lightgcn_hg 2345 ≥ sasrec 1654) confirms the LGBMRanker treats all four columns democratically once they're squashed to [0, 1].
+- **Rating:** the meta-ensemble's calibrated RMSE = 0.8350, MAE = 0.6164. Slope a = 0.0261 (~30× any single BPR base model), beating Popularity (0.8685) and every individual variant. The blend's varied output
+  distribution gives the lstsq calibrator material to work with that no single BPR ranker provides.
 
-Full walkthrough + feature-importance plot + future-work suggestions in
-[`notebooks/ensemble_and_summary.ipynb`](notebooks/ensemble_and_summary.ipynb)
-and [`results/phase3_meta/summary.md`](results/phase3_meta/summary.md).
-
----
+Full walkthrough + feature-importance plot + future-work suggestions in [`notebooks/ensemble_and_summary.ipynb`](notebooks/ensemble_and_summary.ipynb)
 
 ## Notebooks
 
@@ -271,12 +242,9 @@ Every reported number traces back to an executed notebook cell:
 - [`variants/aditya/notebooks/neumf_attn.ipynb`](variants/aditya/notebooks/neumf_attn.ipynb) - NeuMF-Attn model, training curves, and final comparison.
 - [`notebooks/ensemble_and_summary.ipynb`](notebooks/ensemble_and_summary.ipynb) - final comparison across all models.
 
----
-
 ## Reproducibility
 
 **Canonical environment (what the shipped numbers were produced on):**
-
 - Windows 11, Python 3.11
 - PyTorch nightly with CUDA 12.8 (RTX 5070 Ti / Blackwell - `cu124` will not load on this GPU; the nightly is required for the SM_120 kernel).
   ```bash
@@ -285,7 +253,7 @@ Every reported number traces back to an executed notebook cell:
   ```
 - The remaining dependencies pin via `requirements.txt`.
 
-**Total wall-clock for an end-to-end re-run (RTX 5070 Ti):**
+**Total time for an end-to-end re-run (RTX 5070 Ti):**
 
 | Step | Cost | Notes |
 |---|---|---|
@@ -301,32 +269,20 @@ Every reported number traces back to an executed notebook cell:
 | **Total** | **≈ 7.5 hours** | overnight on a single GPU |
 
 **HPC alternative.** Pramod's SLURM layer lives in `extras/hpc/`
-(`run_hpc.sh`, aliases, `requirements-hpc.txt`). Optional. The canonical
-local path above is what was used for every shipped result.
+(`run_hpc.sh`, aliases, `requirements-hpc.txt`). Optional. The canonical local path above is what was used for every shipped result.
 
 ## AI tool disclosure
 
-Per the project guidelines, AI tools were used as follows. Each variant
-section's design decision log captures the substantive choices each
-member made - when AI suggested an approach, what they tried, and what
-they concluded. The team owns and can defend every design decision in
-the repo and the report.
+Per the project guidelines, AI tools were used as follows. Each variant section's design decision log captures the substantive choices each
+member made - when AI suggested an approach, what they tried, and what they concluded.
 
 **Used:**
-
-- **Claude** (Anthropic) - code scaffolding, debugging assistance,
-  literature recall, prose review. Specific contributions: shared
-  evaluation framework boilerplate, model class skeletons, README and
-  summary drafting from concrete numbers, Phase 3 LightGBM harness.
+- **Claude** (Anthropic) - code scaffolding, scripts generation, debugging assistance, literature recall, prose review. Specific contributions: shared evaluation framework boilerplate, model class skeletons, README and summary drafting from concrete numbers, Phase 3 LightGBM harness.
 - **GitHub Copilot** - inline completion during coding.
 
 **Not used:**
-
-- AI for authoring final report prose. The unified report is human-written
-  with at most grammar/typo correction.
-- AI for any data-leakage decisions (train-only profile aggregation,
-  candidate-set construction, calibration-set choice) - those came from
-  the team's own discussion of the protocol.
+- AI for authoring final report and presentation. The unified report is written by us with at most grammar/typo correction.
+- AI for any data-leakage decisions (train-only profile aggregation, candidate-set construction, calibration-set choice) - those came from the team's own discussion of the protocol.
 
 ## References
 

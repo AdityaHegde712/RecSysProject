@@ -43,3 +43,6 @@ checkpoints/
 
 # OS
 .DS_Store
+
+# Report files and figures
+report/

@@ -1,10 +1,8 @@
 """
 Review-text-enhanced Neural Collaborative Filtering (TextNCF).
 
-Two-branch hybrid: GMF (collaborative) + text (sentence embeddings)
-fused through a small MLP. Text embeddings are pre-computed offline
-with all-MiniLM-L6-v2 and loaded as registered buffers so the model
-is compatible with the shared evaluate_ranking(model, loader) interface.
+Two-branch hybrid: GMF (collaborative) + text (sentence embeddings) fused through a small MLP. Text embeddings are pre-computed offline
+with all-MiniLM-L6-v2 and loaded as registered buffers so the model is compatible with the shared evaluate_ranking(model, loader) interface.
 
 Architecture:
     GMF branch:  user_emb ⊙ item_emb  →  (embed_dim,)

@@ -1,19 +1,15 @@
 """
 Train NeuMF with Attention-Weighted Sub-Ratings (Variant B) on HotelRec.
 
-Architecture: NeuMF (GMF + MLP) extended with a per-user attention mechanism
-over 6 hotel sub-rating dimensions (Service, Cleanliness, Location, Value,
-Rooms, Sleep Quality). The attention-weighted sub-rating vector is fused into
-the final prediction layer, providing interpretable, aspect-aware scoring.
+Architecture: NeuMF (GMF + MLP) extended with a per-user attention mechanism over 6 hotel sub-rating dimensions (Service, Cleanliness, Location, Value,
+Rooms, Sleep Quality). The attention-weighted sub-rating vector is fused into the final prediction layer, providing interpretable, aspect-aware scoring.
 
 Sub-rating feature engineering
 -------------------------------
-Item aspect vectors are computed from the **train split only** to avoid
-data leakage. Missing sub-rating values are filled with the global mean of
+Item aspect vectors are computed from the train split only to avoid data leakage. Missing sub-rating values are filled with the global mean of
 that dimension across train rows that have at least one non-null value.
 
-Uses the same 1-vs-99 eval protocol as every other model in this repo:
-score the positive + 99 negatives, rank by score, compute HR@k and NDCG@k.
+Uses the same 1-vs-99 eval protocol as every other model in this repo: score the positive + 99 negatives, rank by score, compute HR@k and NDCG@k.
 
 Writes (same pattern when use_attention=False - see configs/neumf_vanilla.yaml):
     results/<checkpoint_dir>/test_metrics_gmf{g}_mlp{m}.json
@@ -234,7 +230,7 @@ def val_bpr_loss(
 
 
 # ---------------------------------------------------------------------------
-# Score → rating calibration (mirrors calibrate_sasrec in train_sasrec.py)
+# Score --> rating calibration (mirrors calibrate_sasrec in train_sasrec.py)
 # ---------------------------------------------------------------------------
 
 def calibrate_neumf(

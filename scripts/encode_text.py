@@ -2,8 +2,7 @@
 """
 Encode HotelRec review text into sentence embeddings.
 
-Runs all-MiniLM-L6-v2 over the processed reviews and averages per
-user / per item. Saves as .npy files that TextNCF loads at train time.
+Runs all-MiniLM-L6-v2 over the processed reviews and averages per user / per item. Saves as .npy files that TextNCF loads at train time.
 
 Usage:
     python scripts/encode_text.py --kcore 20

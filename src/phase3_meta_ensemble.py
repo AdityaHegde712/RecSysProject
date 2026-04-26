@@ -1,9 +1,7 @@
 """Phase 3: LightGBM meta-learner over the four best Phase-2 variants.
 
-Stacks SASRec (Hriday primary), LightGCN-HG (Hriday secondary),
-NeuMF-Attn (Aditya enhanced), and TextNCF Multi-Task (Pramod enhanced)
-into a single LGBMRanker. Base models are frozen at their best-val
-checkpoints; the meta-learner trains on val (1-vs-99) and evaluates on
+Stacks SASRec (Hriday primary), LightGCN-HG (Hriday secondary), NeuMF-Attn (Aditya enhanced), and TextNCF Multi-Task (Pramod enhanced)
+into a single LGBMRanker. Base models are frozen at their best-val checkpoints; the meta-learner trains on val (1-vs-99) and evaluates on
 test using the same protocol every other variant uses.
 
 Usage:
