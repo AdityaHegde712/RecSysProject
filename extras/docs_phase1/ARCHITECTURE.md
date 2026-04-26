@@ -35,7 +35,7 @@ data/processed/{kcore}/
 
 ### k-core Filtering
 
-This is an iterative process. You can't just filter users once and be done — removing a user might drop an item below the threshold, which then drops another user, and so on. The loop runs until convergence:
+This is an iterative process. You can't just filter users once and be done - removing a user might drop an item below the threshold, which then drops another user, and so on. The loop runs until convergence:
 
 ```
 while True:
@@ -60,7 +60,7 @@ while True:
 
 ## ItemKNN Architecture
 
-ItemKNN (Sarwar et al., 2001) is a standard item-based collaborative filtering method. It doesn't learn parameters — it computes item-item similarity from the interaction matrix and uses that to score candidates.
+ItemKNN (Sarwar et al., 2001) is a standard item-based collaborative filtering method. It doesn't learn parameters - it computes item-item similarity from the interaction matrix and uses that to score candidates.
 
 ```
 train.parquet
@@ -134,7 +134,7 @@ Config (YAML)
               └─ compute HR@k, NDCG@k
 ```
 
-ItemKNN has no training loop — it fits in a single pass. No optimizer, no loss function, no epochs. The "training" step is just building the similarity matrix, which takes a few minutes on CPU.
+ItemKNN has no training loop - it fits in a single pass. No optimizer, no loss function, no epochs. The "training" step is just building the similarity matrix, which takes a few minutes on CPU.
 
 ### Negative Sampling (Evaluation Only)
 
@@ -159,7 +159,7 @@ NDCG@k = 1/log2(rank+1) if the positive item is in top-k, else 0
          (averaged over all test users)
 ```
 
-HR@k tells you "did we retrieve the right item?" NDCG@k also cares about *where* in the list it appears — ranking it #1 is better than #10.
+HR@k tells you "did we retrieve the right item?" NDCG@k also cares about *where* in the list it appears - ranking it #1 is better than #10.
 
 ---
 
@@ -191,7 +191,7 @@ HR@k tells you "did we retrieve the right item?" NDCG@k also cares about *where*
 │  3. Evaluate: HR@k, NDCG@k on test set                          │
 │  4. Save results to results/ and logs to results/logs/           │
 │                                                                  │
-│  Note: ItemKNN doesn't need GPU — runs entirely on CPU.          │
+│  Note: ItemKNN doesn't need GPU - runs entirely on CPU.          │
 │  Email notification on completion/failure                         │
 └──────────────────────────────────────────────────────────────────┘
 ```

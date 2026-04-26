@@ -113,7 +113,7 @@ class NeuMF_Attn(nn.Module):
 
         # ---- Fusion layer -------------------------------------------------
         # Concatenate GMF output (gmf_dim), MLP output (mlp_output_dim),
-        # and — when the attention branch is on — the scalar quality score (1).
+        # and - when the attention branch is on - the scalar quality score (1).
         fusion_in = gmf_dim + mlp_output_dim + (1 if use_attention else 0)
         self.fusion = nn.Linear(fusion_in, 1, bias=True)
 
@@ -194,7 +194,7 @@ class NeuMF_Attn(nn.Module):
             neg_items : (B,) negative item ids.
 
         Returns:
-            pos_scores, neg_scores — each of shape (B,).
+            pos_scores, neg_scores - each of shape (B,).
         """
         pos_scores = self._score(users, pos_items)
         neg_scores = self._score(users, neg_items)

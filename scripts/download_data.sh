@@ -33,7 +33,7 @@ download_full() {
     echo ">>> Downloading HotelRec dataset from SWITCHdrive..."
     echo "    Source: https://drive.switch.ch/index.php/s/n48smsdufhRA7fR"
     echo "    The archive is ~10GB (zip containing ~365K hotel JSON files)."
-    echo "    No extraction needed — our pipeline streams directly from the zip."
+    echo "    No extraction needed - our pipeline streams directly from the zip."
     echo ""
 
     DOWNLOAD_URL="https://drive.switch.ch/index.php/s/n48smsdufhRA7fR/download"
@@ -58,7 +58,7 @@ download_full() {
 
     DEST="${RAW_DIR}/HotelRec.zip"
     echo "  Downloading to $DEST ..."
-    echo "  (This will take a while — ~10GB file)"
+    echo "  (This will take a while - ~10GB file)"
     echo ""
 
     # Try wget first (supports resume with -c)
@@ -83,7 +83,7 @@ download_full() {
         exit 1
     fi
 
-    # No extraction needed — preprocess_zip.py streams directly from the zip.
+    # No extraction needed - preprocess_zip.py streams directly from the zip.
     echo ""
     echo "  Download complete. No extraction needed."
     echo "  The preprocessing step reads directly from the zip file."
@@ -102,7 +102,7 @@ case "$MODE" in
     *)
         echo "Usage: bash scripts/download_data.sh full"
         echo "  Downloads HotelRec zip from SWITCHdrive (~50GB)."
-        echo "  No extraction needed — preprocess_zip.py streams from the zip."
+        echo "  No extraction needed - preprocess_zip.py streams from the zip."
         echo ""
         echo "  For a quick smoke test with a subset, run preprocess.py with --max-reviews 500000."
         exit 1

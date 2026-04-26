@@ -1,14 +1,14 @@
-# Variant A — SASRec (primary) + LightGCN-HG (secondary)
+# Variant A - SASRec (primary) + LightGCN-HG (secondary)
 
 **Owner:** Hriday Ampavatina
 
 Two sub-variants under this folder:
 
-- **A1 — SASRec** (primary): Self-Attentive Sequential Recommendation
+- **A1 - SASRec** (primary): Self-Attentive Sequential Recommendation
   (Kang & McAuley, ICDM 2018). Causal-attention transformer over each
   user's time-ordered hotel sequence. Uses HotelRec's `date` column,
   which no teammate's variant consumes.
-- **A2 — LightGCN-HG** (secondary): LightGCN extended with TripAdvisor
+- **A2 - LightGCN-HG** (secondary): LightGCN extended with TripAdvisor
   geography nodes (`g_id` / region / country) parsed from `hotel_url`.
   Kept as a feature-rich angle orthogonal to SASRec's temporal channel.
 
@@ -17,17 +17,17 @@ Two sub-variants under this folder:
 This variant went through three iterations before settling on the final
 SASRec (primary) + LightGCN-HG (secondary) structure.
 
-1. **Started with vanilla LightGCN** (He et al., SIGIR 2020) — symmetric-
-   normalised graph convolution on the user–item bipartite graph. Beat
+1. **Started with vanilla LightGCN** (He et al., SIGIR 2020) - symmetric-
+   normalised graph convolution on the user-item bipartite graph. Beat
    Popularity, GMF, and matched/beat ItemKNN on HR@10/20, but lost NDCG@5/10/20
    to ItemKNN. Final HR@10 = 0.7532, NDCG@10 = 0.5677.
 2. **Instructor feedback → LightGCN-HG.** Using only `(user, item, rating)`
    makes the variant essentially a baseline against a feature-rich dataset.
-   Built **LightGCN-HG** — bipartite graph extended with TripAdvisor location
+   Built **LightGCN-HG** - bipartite graph extended with TripAdvisor location
    nodes. HG beats vanilla on every metric (HR@10 0.7591 vs 0.7532) but only
    by small margins; the graph-based ceiling looks low.
 3. **Pivoted to SASRec as primary.** A small sequential-model bakeoff
-   (`dim=64`, 8 epochs, matched 1-vs-99 eval) — see notebook 06 Section 1 —
+   (`dim=64`, 8 epochs, matched 1-vs-99 eval) - see notebook 06 Section 1 -
    showed SASRec dominated GRU4Rec and Mult-VAE by >2× HR@10 at the same
    compute. Scaled up to `dim=128` / 30 epochs, SASRec reaches HR@10 = 0.8808
    and NDCG@10 = 0.8392 (+28% / +38% relative vs ItemKNN).
@@ -38,14 +38,14 @@ adds a graph-based research angle to the team comparison.
 
 ---
 
-## A1 — SASRec (primary)
+## A1 - SASRec (primary)
 
 ### Approach
 
 SASRec treats recommendation as **next-item prediction**: for each user,
 sort their interactions by date, and ask the model to predict item `t`
 given items `[0, 1, ..., t-1]`. The architecture is a small transformer
-decoder — item + position embeddings → two causal self-attention layers →
+decoder - item + position embeddings → two causal self-attention layers →
 dot-product scoring of the last-position representation against a candidate
 item's embedding.
 
@@ -62,7 +62,7 @@ this repo.
 - **Uses a signal no one else does.** `date` has 100% coverage on the
   20-core. Aditya's NeuMF uses sub-ratings; Pramod's TextNCF uses review
   text; none of the baselines use time.
-- **Trip structure.** Hotel bookings are inherently sequential — vacations
+- **Trip structure.** Hotel bookings are inherently sequential - vacations
   cluster in time, chains get re-visited, seasonal patterns exist.
   Self-attention is a good inductive bias for exactly this pattern.
 
@@ -93,7 +93,7 @@ Total training time **869 s** (~14.5 min on one RTX 5070 Ti).
 | **SASRec (dim=128, L=2)** | **0.8502** | **0.8808** | **0.9173** | **0.8294** | **0.8392** | **0.8484** |
 
 **Deltas vs best baseline (ItemKNN):** HR@10 +28.2 % rel, NDCG@10 +37.7 % rel.
-NDCG gains are especially striking — SASRec reliably places the correct
+NDCG gains are especially striking - SASRec reliably places the correct
 hotel very high in the ranked list.
 
 ### Why Popularity wins RMSE (and why that's fine)
@@ -101,26 +101,26 @@ hotel very high in the ranked list.
 Popularity predicts each item's mean training rating. On HotelRec, 78%
 of ratings are 4 or 5 stars, so the item-mean already captures most of
 the rating variance. Any ranking-trained model (BPR loss, no explicit
-rating target) has a near-zero calibration slope `a ≈ 0` — its
+rating target) has a near-zero calibration slope `a ≈ 0` - its
 "calibrated" rating is essentially a constant near the global mean
 (~4.08). That constant predictor has RMSE ≈ 0.93, losing to Popularity's
 0.8685. **Ranking is the primary metric** for this variant.
 
 ---
 
-## A2 — LightGCN-HG (secondary)
+## A2 - LightGCN-HG (secondary)
 
 ### Approach
 
 Extends the (user, item) bipartite graph from the LightGCN paper with
 three tiers of TripAdvisor geography parsed from `hotel_url`:
 
-- `g_id`         — TripAdvisor location id (one per city / neighbourhood)
-- `region_slug`  — last 2 underscore tokens of the URL tail
-- `country_slug` — last 1 token
+- `g_id`         - TripAdvisor location id (one per city / neighbourhood)
+- `region_slug`  - last 2 underscore tokens of the URL tail
+- `country_slug` - last 1 token
 
 Each hotel adds one edge to each tier node. Tier nodes connect nowhere
-else — they act as pivot hubs so co-located hotels share signal even
+else - they act as pivot hubs so co-located hotels share signal even
 when they have no shared reviewer. Same BPR loop, cosine LR, early stop;
 only the adjacency changes.
 
@@ -131,7 +131,7 @@ only the adjacency changes.
 | Graph tiers | bipartite only, +g_id, +g_id+region, +g_id+region+country | **+g_id+region+country (3-tier)** | Each adds incremental edges; 3-tier gives the most pivot connectivity without redundant noise. |
 | LightGCN layers `K` | 1, 2, 3 | **1** | Higher K oversmoothed on this graph (HG already adds pivot hops). |
 | Embed dim | 64, 128, 256 | **256** | Larger dim helps graph CF more than seq models; per LightGCN paper. |
-| Negative sampling | 1, 2, 4 | **2** | Sweet spot — 1 unstable, 4 slows training without metric lift. |
+| Negative sampling | 1, 2, 4 | **2** | Sweet spot - 1 unstable, 4 slows training without metric lift. |
 | BPR L2 reg | 0, 1e-5, 1e-4 | **1e-5** | LightGCN authors' recommendation; light reg works on a sparse graph. |
 | Patience | 5, 10, 15 | **15** | Graph CF plateaus then dips; longer patience caught the late peak at epoch 37. |
 
@@ -163,44 +163,44 @@ Trained to early stop at epoch 52; best checkpoint from epoch 37.
 | **LightGCN-HG (3-tier)** | 0.6460 | **0.7591** | **0.8655** | 0.5352 | 0.5718 | 0.5988 |
 
 Beats every baseline on HR@10/20. Loses NDCG@5/10/20 to ItemKNN (very
-concentrated on top-1 placement). SASRec dominates on every metric — HG
+concentrated on top-1 placement). SASRec dominates on every metric - HG
 is kept as a secondary angle, not the lead result.
 
 **Vanilla vs HG A/B** (day-10 vanilla-vs-enhanced ask):
 LightGCN-HG beats vanilla bipartite by +0.0059 HR@10 and +0.0041 NDCG@10
-— small but consistent. Calibrated RMSE is identical (0.9312) — the
+- small but consistent. Calibrated RMSE is identical (0.9312) - the
 geography augmentation moves ranking, not rating.
 
 ---
 
 ## Files
 
-- `src/data/sequential.py` — chronological per-user sequence builder,
+- `src/data/sequential.py` - chronological per-user sequence builder,
   `NextItemDataset` (training), `SequentialEvalDataset` (1-vs-99 eval).
-- `src/models/sasrec.py` — SASRec model.
-- `src/models/lightgcn_hg.py` — heterogeneous LightGCN model.
-- `src/graph/hetero_adj.py` — torch-free scipy graph builder.
-- `src/train_sasrec.py` — SASRec trainer (BPR + cosine LR + early stop).
-- `src/train_lightgcn_hg.py` — LightGCN-HG trainer with `--tiers` flag.
-- `configs/sasrec.yaml` — `dim=128`, `max_seqlen=100`, 2 layers, 30 epochs.
-- `configs/lightgcn_hg.yaml` — `K=1`, `dim=256`, 3-tier default.
-- `scripts/extract_hotel_meta.py` — URL parser → `hotel_meta.parquet`.
-- `results/sasrec/`, `results/lightgcn_hg/` — test metrics, calibrated
+- `src/models/sasrec.py` - SASRec model.
+- `src/models/lightgcn_hg.py` - heterogeneous LightGCN model.
+- `src/graph/hetero_adj.py` - torch-free scipy graph builder.
+- `src/train_sasrec.py` - SASRec trainer (BPR + cosine LR + early stop).
+- `src/train_lightgcn_hg.py` - LightGCN-HG trainer with `--tiers` flag.
+- `configs/sasrec.yaml` - `dim=128`, `max_seqlen=100`, 2 layers, 30 epochs.
+- `configs/lightgcn_hg.yaml` - `K=1`, `dim=256`, 3-tier default.
+- `scripts/extract_hotel_meta.py` - URL parser → `hotel_meta.parquet`.
+- `results/sasrec/`, `results/lightgcn_hg/` - test metrics, calibrated
   RMSE, checkpoints, log CSVs, summaries.
 
 ## Run
 
 ```bash
-# A1 — SASRec primary
+# A1 - SASRec primary
 python -m src.train_sasrec --config configs/sasrec.yaml --kcore 20
 
-# A2 — LightGCN-HG (extract geography metadata first)
+# A2 - LightGCN-HG (extract geography metadata first)
 python -m scripts.extract_hotel_meta --kcore 20
 
 # Vanilla bipartite ablation
 python -m src.train_lightgcn_hg --config configs/lightgcn_hg.yaml \
     --kcore 20 --tiers none
-# HG variant (default — uses g_id + region + country pivots)
+# HG variant (default - uses g_id + region + country pivots)
 python -m src.train_lightgcn_hg --config configs/lightgcn_hg.yaml --kcore 20
 
 # Calibrated RMSE for both LightGCN checkpoints
@@ -214,19 +214,19 @@ python scripts/compute_rmse.py --kcore 20 \
 
 ## Notebooks
 
-- [`notebooks/04_lightgcn_hg.ipynb`](notebooks/04_lightgcn_hg.ipynb) —
+- [`notebooks/lightgcn_hg.ipynb`](notebooks/lightgcn_hg.ipynb) -
   LightGCN-HG (A2): graph construction, training, evaluation,
   vanilla-vs-HG A/B.
-- [`notebooks/06_sasrec.ipynb`](notebooks/06_sasrec.ipynb) —
+- [`notebooks/sasrec.ipynb`](notebooks/sasrec.ipynb) -
   SASRec (A1): bakeoff justification (Section 1), model walkthrough,
   training curves, final results.
 
 Shared notebooks at the repo root:
 
-- [`../../notebooks/01_preprocessing.ipynb`](../../notebooks/01_preprocessing.ipynb)
-- [`../../notebooks/01_dataset_eda.ipynb`](../../notebooks/01_dataset_eda.ipynb)
-- [`../../notebooks/02_baselines.ipynb`](../../notebooks/02_baselines.ipynb)
-- [`../../notebooks/05_ensemble_and_summary.ipynb`](../../notebooks/05_ensemble_and_summary.ipynb)
+- [`../../notebooks/preprocessing.ipynb`](../../notebooks/preprocessing.ipynb)
+- [`../../notebooks/dataset_eda.ipynb`](../../notebooks/dataset_eda.ipynb)
+- [`../../notebooks/baselines.ipynb`](../../notebooks/baselines.ipynb)
+- [`../../notebooks/ensemble_and_summary.ipynb`](../../notebooks/ensemble_and_summary.ipynb)
 
 ## References
 

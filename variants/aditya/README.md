@@ -1,4 +1,4 @@
-# Variant B — NeuMF with Attention-Weighted Sub-Ratings
+# Variant B - NeuMF with Attention-Weighted Sub-Ratings
 
 **Owner:** Aditya Hegde
 
@@ -38,7 +38,7 @@ The variant was scoped in two iterations:
 1. **Initial design:** plain NeuMF + attention over per-interaction
    sub-ratings (treating each review as having its own (service,
    cleanliness, …) tuple). Dropped because that mixes user preference
-   with item quality — at inference you don't have a fresh interaction's
+   with item quality - at inference you don't have a fresh interaction's
    sub-ratings to attend over.
 2. **Final design:** item-level aspect vectors. Pre-compute each hotel's
    train-split-mean sub-ratings (frozen at training start), and learn
@@ -47,7 +47,7 @@ The variant was scoped in two iterations:
 
 Day-10 vanilla-vs-enhanced ablation revealed the attention head adds
 **zero signal** on this dataset (numbers below). The decision is
-documented as the headline finding rather than buried — see "What the
+documented as the headline finding rather than buried - see "What the
 attention learned" in
 [`results/neumf_attn/summary.md`](../../results/neumf_attn/summary.md).
 
@@ -58,13 +58,13 @@ attention learned" in
 | Backbone | GMF, MLP, NeuMF (GMF+MLP), Wide&Deep | **NeuMF** | He et al. WWW 2017 standard; combines linear (GMF) and non-linear (MLP) interaction modelling. |
 | Aspect aggregation | per-interaction, per-item train-mean, per-user train-mean | **per-item train-mean** | Avoids leaking val/test sub-ratings; aligns with how attention weights are used at inference. |
 | Attention granularity | per-interaction, per-user (over fixed item aspects) | **per-user** | Item aspects are fixed; attention varies by user preference, which is what we want to model. |
-| Aspect attention activation | sigmoid (independent), softmax (competitive), sparsemax | **softmax** | Standard; later analysis showed it collapsed to nearly-uniform — sparsemax / entropy-bonus is the noted follow-up. |
+| Aspect attention activation | sigmoid (independent), softmax (competitive), sparsemax | **softmax** | Standard; later analysis showed it collapsed to nearly-uniform - sparsemax / entropy-bonus is the noted follow-up. |
 | Embed dim (gmf/mlp) | 32, 64, 128 | **64 / 64** | Bigger dims over-fit at 50 epochs on this user-count; 64 is the sweet spot per a quick 5-epoch sweep. |
 | MLP shape | [128,64], [256,128,64], [512,256,128] | **[256,128,64]** | 3-layer pyramid stable; deeper dropped val NDCG without HR gain. |
 | Loss | BPR, BCE, sampled softmax | **BPR (1 neg)** | Matches the rest of the team's variants for direct comparability under the shared 1-vs-99 protocol. |
 | Negative sampling | 1, 2, 4 per positive | **4** | Stronger gradient signal helps the deeper MLP; ablation showed +0.005 HR@10 over 1 neg. |
 | Calibration for RMSE | none, lstsq on val | **lstsq on val** | Same methodology as every other ranking model in the repo so RMSE is comparable. |
-| Run length | 50 ep / patience 10 (this run); 200 ep / patience 30 (originally proposed) | **50 / 10** | Wall-clock budget; HR@10 was still creeping at epoch 50 but val_loss began an uptick. Longer runs would likely improve modestly — flagged as future work. |
+| Run length | 50 ep / patience 10 (this run); 200 ep / patience 30 (originally proposed) | **50 / 10** | Wall-clock budget; HR@10 was still creeping at epoch 50 but val_loss began an uptick. Longer runs would likely improve modestly - flagged as future work. |
 
 ## Vanilla vs Enhanced (day-10 instructor ask)
 
@@ -83,7 +83,7 @@ plain GMF baseline is driven by the MLP branch + bigger embeddings, not
 by the attention head.
 
 **Diagnosis:** HotelRec's six aspect averages are tightly correlated and
-nearly always 4–5 across the board, so softmax-over-aspects collapses
+nearly always 4-5 across the board, so softmax-over-aspects collapses
 to near-uniform regardless of user. Same dataset-level pattern Pramod's
 TextNCF sub-rating variant hit. Sparsemax / entropy-bonus is the natural
 next experiment.
@@ -97,12 +97,12 @@ next experiment.
 | ItemKNN (baseline) | 0.6870 | 0.6093 | k=20 |
 | TextNCF Multi-Task (Pramod) | 0.6864 | 0.5097 | |
 | **Vanilla NeuMF (this variant)** | **0.7254** | **0.5228** | best HR@10 among non-sequential neural variants |
-| Enhanced NeuMF-Attn | 0.7245 | 0.5221 | attention adds zero — see vanilla-vs-enhanced section |
+| Enhanced NeuMF-Attn | 0.7245 | 0.5221 | attention adds zero - see vanilla-vs-enhanced section |
 | LightGCN-HG (Hriday secondary) | 0.7591 | 0.5718 | different feature channel (geography) |
 | SASRec (Hriday primary) | 0.8808 | 0.8392 | sequence model |
 
 Calibrated RMSE on all NeuMF runs = **0.9304** (slope ≈ 0.02, `b ≈ 4.07`)
-— same flat-calibration pattern every BPR-trained ranker hits on
+- same flat-calibration pattern every BPR-trained ranker hits on
 HotelRec. Popularity wins RMSE at 0.8685.
 
 ## How to run
@@ -113,24 +113,24 @@ HotelRec. Popularity wins RMSE at 0.8685.
 # Enhanced (sub-rating attention head on)
 python -m src.train_neumf_attn --config configs/neumf_attn.yaml --kcore 20
 
-# Vanilla ablation (no attention) — day-10 vanilla-vs-enhanced ask
+# Vanilla ablation (no attention) - day-10 vanilla-vs-enhanced ask
 python -m src.train_neumf_attn --config configs/neumf_vanilla.yaml --kcore 20
 ```
 
 The training script does training + 1-vs-99 test eval + score-to-rating
-calibration in one pass. Wall-clock per run on RTX 5070 Ti: **~96–115 min**
+calibration in one pass. Wall-clock per run on RTX 5070 Ti: **~96-115 min**
 (50 epochs × ~2 min/epoch).
 
 ## Files
 
-- `src/models/neumf_attn.py` — `NeuMF_Attn` model (GMF + MLP + sub-rating
+- `src/models/neumf_attn.py` - `NeuMF_Attn` model (GMF + MLP + sub-rating
   attention + fusion). Takes `use_attention: bool` so the same class
   powers both vanilla and enhanced runs.
-- `src/train_neumf_attn.py` — training + eval + calibration pipeline.
-- `configs/neumf_attn.yaml` — enhanced config.
-- `configs/neumf_vanilla.yaml` — vanilla ablation (only diff: `use_attention: false`).
-- `variants/aditya/notebooks/08_neumf_attn.ipynb` — executed walkthrough.
-- `results/neumf_attn/`, `results/neumf_vanilla/` — per-config test
+- `src/train_neumf_attn.py` - training + eval + calibration pipeline.
+- `configs/neumf_attn.yaml` - enhanced config.
+- `configs/neumf_vanilla.yaml` - vanilla ablation (only diff: `use_attention: false`).
+- `variants/aditya/notebooks/neumf_attn.ipynb` - executed walkthrough.
+- `results/neumf_attn/`, `results/neumf_vanilla/` - per-config test
   metrics, rating metrics, summaries.
 
 ## Data leakage note
@@ -147,7 +147,7 @@ column (none observed on HotelRec) would fall back to 3.0.
 - **LightGCN-HG (Hriday):** different feature channel (graph + geography).
 - **TextNCF (Pramod):** different auxiliary channel (review text). Pramod's
   sub-rating *variant* uses the same six columns but as regression
-  targets, not as attention-weighted inputs — the decomposition direction
+  targets, not as attention-weighted inputs - the decomposition direction
   is different.
 
 ## References

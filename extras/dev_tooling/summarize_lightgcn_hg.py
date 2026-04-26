@@ -107,7 +107,7 @@ def main() -> None:
     )
     lines.append("See `variants/hriday/PLAN.md` for the design doc and the "
                  "decision trail that led to SASRec as the primary variant. "
-                 "Walkthrough in `variants/hriday/notebooks/04_lightgcn_hg.ipynb`.\n")
+                 "Walkthrough in `variants/hriday/notebooks/lightgcn_hg.ipynb`.\n")
 
     if not runs:
         lines.append("> **No HG runs found yet** under `results/lightgcn_hg/`. "

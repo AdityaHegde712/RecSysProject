@@ -186,7 +186,7 @@ def test_config_loading():
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("HotelRec — Pipeline Validation (ItemKNN)")
+    print("HotelRec - Pipeline Validation (ItemKNN)")
     print("=" * 60)
     print()
 

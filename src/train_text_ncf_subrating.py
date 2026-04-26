@@ -64,7 +64,7 @@ def subrating_loss(model, users, pos_items, neg_items, sub_ratings, beta, device
     neg_items = neg_items.to(device)
     sub_ratings = sub_ratings.to(device)
 
-    # forward on positive items — get combined score + aspect predictions
+    # forward on positive items - get combined score + aspect predictions
     pos_score, pos_aspects, pos_attn = model.forward_detailed(users, pos_items)
 
     # BPR: combined score for positive vs negative

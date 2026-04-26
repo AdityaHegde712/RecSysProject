@@ -36,7 +36,7 @@ def check(name, import_path=None, version_attr='__version__'):
 
 
 def check_optional(name, import_path=None, version_attr='__version__'):
-    """Check an optional dependency — warn but don't fail."""
+    """Check an optional dependency - warn but don't fail."""
     global PASS
     mod_name = import_path or name
     try:
@@ -45,7 +45,7 @@ def check_optional(name, import_path=None, version_attr='__version__'):
         print(f"  OK   {name:<30s} {ver}")
         PASS += 1
     except Exception:
-        print(f"  WARN {name:<30s} not installed (optional — needed for neural variants)")
+        print(f"  WARN {name:<30s} not installed (optional - needed for neural variants)")
         PASS += 1  # don't count as failure
 
 
@@ -95,7 +95,7 @@ def check_script_syntax():
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("HotelRec — Environment Verification")
+    print("HotelRec - Environment Verification")
     print("=" * 60)
     print(f"\nPython: {sys.version}")
     print(f"Path:   {sys.executable}\n")

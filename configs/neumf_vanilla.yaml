@@ -1,4 +1,4 @@
-# Variant B — **vanilla** NeuMF ablation (no sub-rating attention)
+# Variant B - **vanilla** NeuMF ablation (no sub-rating attention)
 #
 # Matches configs/neumf_attn.yaml on every hyperparameter except
 #   model.use_attention: false

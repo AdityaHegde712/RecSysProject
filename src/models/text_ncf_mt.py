@@ -124,7 +124,7 @@ class TextNCFMultiTask(nn.Module):
     def predict_rating(self, user_ids, item_ids):
         """Predict ratings for (user, item) pairs.
 
-        Returns predicted ratings (not clamped — clamping done in loss).
+        Returns predicted ratings (not clamped - clamping done in loss).
         """
         h = self._encode(user_ids, item_ids)
         return self.rating_head(h).squeeze(-1)

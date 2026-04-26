@@ -69,7 +69,7 @@ class TextNCF(nn.Module):
         layers.append(nn.Linear(prev, 1))
         self.mlp = nn.Sequential(*layers)
 
-        # text embedding buffers — set via load_text_embeddings()
+        # text embedding buffers - set via load_text_embeddings()
         # registered as buffers so they move to GPU with .to(device)
         self.register_buffer("_user_text_emb", torch.zeros(1, text_dim))
         self.register_buffer("_item_text_emb", torch.zeros(1, text_dim))

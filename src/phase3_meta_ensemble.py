@@ -371,7 +371,7 @@ def main():
     test_df = load_split(kcore_dir, "test")
     user_pos_all = get_user_positive_items(kcore_dir)
 
-    # Shared 1-vs-99 candidate pool — same seed as every other variant.
+    # Shared 1-vs-99 candidate pool - same seed as every other variant.
     val_ds  = EvalInteractionDataset(val_df,  n_items, user_pos_all,
                                       args.eval_negatives, args.seed)
     test_ds = EvalInteractionDataset(test_df, n_items, user_pos_all,
@@ -452,7 +452,7 @@ def main():
         print(f"  {n:13s}: {imp}")
 
     # ----- calibrated rating metrics (lstsq score → rating on val pos rows) -----
-    # Only the positive (label=1) pairs have ground-truth ratings — lookup from
+    # Only the positive (label=1) pairs have ground-truth ratings - lookup from
     # val_df + test_df by (user, item). Both splits have multiple rating rows
     # for the same (user, item) when users updated their reviews, so dedupe by
     # mean rating before the merge to preserve row count.

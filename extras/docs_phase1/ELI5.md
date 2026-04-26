@@ -8,18 +8,18 @@
 
 We're reproducing the baseline experiments from a 2020 paper by Antognini & Faltings that introduced **HotelRec**, a massive dataset of 50 million TripAdvisor hotel reviews. The paper ran a bunch of standard recommendation algorithms on this data and reported how well they did. We focus on **ItemKNN** (item-based K-nearest neighbors) as our baseline model.
 
-The task is **top-K recommendation** — given a user, rank a set of candidate hotels and see if the one they actually liked ends up near the top. We measure this with Hit Rate and NDCG (higher is better).
+The task is **top-K recommendation** - given a user, rank a set of candidate hotels and see if the one they actually liked ends up near the top. We measure this with Hit Rate and NDCG (higher is better).
 
 ---
 
 ## What Is the HotelRec Dataset?
 
-The authors scraped TripAdvisor using Selenium (an automated web browser). They collected every publicly visible hotel review — about 50 million of them — covering 365K hotels and 22 million users.
+The authors scraped TripAdvisor using Selenium (an automated web browser). They collected every publicly visible hotel review - about 50 million of them - covering 365K hotels and 22 million users.
 
 Each review has:
 - A user identifier (anonymized URL)
 - A hotel identifier
-- An overall rating (1–5 stars)
+- An overall rating (1-5 stars)
 - Review text
 - Date
 - Up to 8 sub-ratings (Service, Cleanliness, Location, Value, Rooms, Sleep Quality, Check-In, Business Service)
@@ -28,13 +28,13 @@ The raw data is one JSON file per hotel. The full dump is roughly 50GB.
 
 ### Why Is This Dataset Interesting?
 
-Most recommendation research uses MovieLens (27M ratings, 280K users) or Amazon reviews. HotelRec is an order of magnitude larger, and the domain is fundamentally different — most people review maybe 1–3 hotels total, while movie reviewers might rate hundreds of films. This makes the data extremely sparse.
+Most recommendation research uses MovieLens (27M ratings, 280K users) or Amazon reviews. HotelRec is an order of magnitude larger, and the domain is fundamentally different - most people review maybe 1-3 hotels total, while movie reviewers might rate hundreds of films. This makes the data extremely sparse.
 
 ---
 
 ## What Is k-core Filtering?
 
-Raw data is messy. Tons of users wrote exactly one review, and some hotels have only a handful. Models can't learn anything useful from a user who reviewed one hotel — there's no pattern to find.
+Raw data is messy. Tons of users wrote exactly one review, and some hotels have only a handful. Models can't learn anything useful from a user who reviewed one hotel - there's no pattern to find.
 
 **k-core filtering** removes users and items with fewer than k interactions. The catch is that it's iterative: removing a user might drop a hotel below the threshold, which then drops another user, and so on. You keep looping until nothing changes.
 
@@ -53,16 +53,16 @@ Even after aggressive filtering (20-core), the data is still 99.92% sparse. That
 **ItemKNN** (Sarwar et al., 2001) is one of the oldest and simplest recommendation algorithms. The idea:
 
 1. Build a matrix of which users interacted with which items (binary: yes/no)
-2. Compute how similar each pair of items is using cosine similarity — items that are liked by the same users are similar
+2. Compute how similar each pair of items is using cosine similarity - items that are liked by the same users are similar
 3. To recommend for a user: look at what they've already interacted with, find items similar to those, and rank by total similarity
 
-It's like asking: "What hotels are most similar to the ones this user already reviewed?" — where "similar" means "reviewed by the same kinds of people."
+It's like asking: "What hotels are most similar to the ones this user already reviewed?" - where "similar" means "reviewed by the same kinds of people."
 
 ### Why Does ItemKNN Struggle Here?
 
-With 99.999% sparsity, most item pairs share almost no users. The similarity matrix is nearly all zeros, so the recommendations are close to random. The paper reports ItemKNN at HR@10 = 0.0411 on 20-core — meaning only 4% of the time does the right hotel appear in the top 10. That's barely better than random guessing (which would be ~10% with 99 negatives).
+With 99.999% sparsity, most item pairs share almost no users. The similarity matrix is nearly all zeros, so the recommendations are close to random. The paper reports ItemKNN at HR@10 = 0.0411 on 20-core - meaning only 4% of the time does the right hotel appear in the top 10. That's barely better than random guessing (which would be ~10% with 99 negatives).
 
-This is exactly why we chose it as our baseline — it sets a low bar that neural approaches should easily beat. Neural models like GMF and NeuMF learn dense embeddings that capture indirect relationships, which helps a lot when direct overlap is rare.
+This is exactly why we chose it as our baseline - it sets a low bar that neural approaches should easily beat. Neural models like GMF and NeuMF learn dense embeddings that capture indirect relationships, which helps a lot when direct overlap is rare.
 
 ---
 
@@ -89,7 +89,7 @@ HR@10 = 0.04 means that for only about 4% of test users, the hotel they actually
 ### Quick Reference
 
 ```bash
-# First time setup (on login node — has internet)
+# First time setup (on login node - has internet)
 git clone <repo-url> HotelRec-HPA
 cd HotelRec-HPA
 bash scripts/run_hpc.sh setup
@@ -156,10 +156,10 @@ checkpoints
 | **HotelRec** | Dataset of 50M TripAdvisor hotel reviews (Antognini & Faltings, 2020) |
 | **k-core** | Subset where every user and item has at least k interactions |
 | **Collaborative filtering** | Recommendation based on user-item interaction patterns (no content features) |
-| **ItemKNN** | Item-based K-nearest neighbors — recommends items similar to user's history |
+| **ItemKNN** | Item-based K-nearest neighbors - recommends items similar to user's history |
 | **Cosine similarity** | Measures angle between two vectors; 1 = identical direction, 0 = orthogonal |
-| **HR@k** | Hit Rate at k — fraction of users whose positive item is in top k |
-| **NDCG@k** | Normalized Discounted Cumulative Gain — position-aware ranking metric |
+| **HR@k** | Hit Rate at k - fraction of users whose positive item is in top k |
+| **NDCG@k** | Normalized Discounted Cumulative Gain - position-aware ranking metric |
 | **Sparsity** | Fraction of empty cells in the user-item matrix |
 | **HPC** | High-Performance Computing cluster (SJSU CoE) |
 | **SLURM** | Job scheduler used on HPC clusters |
