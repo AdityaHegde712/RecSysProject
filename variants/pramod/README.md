@@ -1,12 +1,10 @@
 # Variant C: TextNCF — Review-Text-Enhanced NCF
 
-**Owner:** Pramod Yadav
+**Pramod Yadav**
 
-> See [`PLAN.md`](PLAN.md) for the design decisions and iteration history.
+## What I'm doing
 
-## Approach
-
-TextNCF adds review text to the standard NCF pipeline. Hotels get reviewed with detailed text ("great location, noisy rooms, amazing breakfast"), and that text carries signal that star ratings alone miss. The review text is encoded with a sentence transformer and fused with the usual collaborative filtering embeddings.
+I'm adding review text to the standard NCF pipeline. The idea is pretty straightforward — hotels get reviewed with detailed text ("great location, noisy rooms, amazing breakfast"), and that text carries signal that star ratings alone miss. So I encode the review text with a sentence transformer and fuse it with the usual collaborative filtering embeddings.
 
 The base model has two branches:
 - **GMF branch** — standard user/item embedding dot product, same as the baseline GMF
@@ -14,13 +12,13 @@ The base model has two branches:
 
 Both branches get concatenated and run through a small MLP to produce a score. Trained with BPR loss since we're treating this as implicit feedback.
 
-On top of the base TextNCF, four additional approaches push performance further.
+On top of the base TextNCF, I'm exploring four additional approaches to push performance further.
 
-## Why TextNCF fits HotelRec
+## Why this makes sense for HotelRec
 
 The dataset has 50M reviews averaging 125 words each. That's a lot of text signal sitting there unused by pure collaborative filtering. About 71% of reviews have substantive text. The text captures stuff like "walking distance to the beach" or "thin walls" that you can't get from a 4-star rating.
 
-A frozen all-MiniLM-L6-v2 (384-dim) encodes the text. Freezing it means no fine-tuning of a 22M parameter transformer — just a small projection layer on top. The encoding is done offline as a preprocessing step.
+I'm using a frozen all-MiniLM-L6-v2 (384-dim) to encode the text. Freezing it means I don't need to fine-tune a 22M parameter transformer — I just learn a small projection layer on top. The encoding is done offline as a preprocessing step.
 
 ## Approaches
 
@@ -76,7 +74,7 @@ python -m src.train_text_ncf_subrating \
     --config configs/text_ncf_subrating.yaml --kcore 20
 ```
 
-## Run
+## How to run everything
 
 ```bash
 # step 1: encode reviews (needs sentence-transformers, ~11 min on RTX 5070 Ti)
@@ -107,6 +105,15 @@ python scripts/compute_rmse.py --kcore 20 \
     --text-ncf-subrating-ckpt results/text_ncf_subrating/best_model.pt
 ```
 
+On HPC (existing aliases continue to work):
+```bash
+sbatch scripts/run_hpc.sh text-ncf        # base TextNCF
+sbatch scripts/run_hpc.sh text-ncf-mt     # multi-task
+sbatch scripts/run_hpc.sh text-ncf-sub    # sub-rating
+sbatch scripts/run_hpc.sh ensemble        # ensemble eval
+sbatch scripts/run_hpc.sh two-stage       # two-stage eval
+```
+
 ## Results
 
 20-core HotelRec, 1-vs-99 evaluation. Full numbers + decision notes in
@@ -127,36 +134,15 @@ executed walkthrough.
 | Ensemble (TextNCF+GMF+KNN) | 0.6870 | 0.6093 | grid picked KNN-only — degenerate |
 | Two-stage (KNN→TextNCF) | 0.3858 | 0.2977 | gt_recall@200 = 5 % — recall-bound |
 
-**Deltas vs GMF baseline (best single-model comparison):**
-
-| Metric | TextNCF MT Δ (abs) | TextNCF MT Δ (rel) |
-|--------|-------------------|-------------------|
-| HR@5   | +0.0189 | +3.4% |
-| HR@10  | +0.0179 | +2.7% |
-| HR@20  | +0.0095 | +1.2% |
-| NDCG@5 | +0.0236 | +5.2% |
-| NDCG@10| +0.0234 | +4.8% |
-| NDCG@20| +0.0213 | +4.1% |
-
 Calibrated RMSE for the three trained variants is around **0.93** (slope
 ≈ 0.01–0.03), the same flat calibration pattern SASRec / GMF /
 LightGCN-HG hit. Popularity wins RMSE at 0.8685. Details in the summary.
-
-### Why Popularity wins RMSE (and why that's fine)
-
-Popularity predicts each item's mean training rating. On HotelRec, 78 %
-of ratings are 4 or 5 stars, so the item-mean already captures most of
-the rating variance. Any ranking-trained model (BPR loss, no explicit
-rating target) will have a near-zero calibration slope — its "calibrated"
-rating is essentially a constant near the global mean (~4.08). That
-constant predictor has RMSE ≈ 0.93, losing to Popularity's 0.8685.
-**Ranking is the primary metric.**
 
 ## Data leakage note
 
 User text profiles only use training-split reviews. Item profiles use all reviews since that's basically hotel metadata (what people say about the hotel doesn't change across splits). This follows the standard practice from the NCF literature.
 
-## Files
+## Files I added
 
 **Models:**
 - `src/models/text_ncf.py` — base TextNCF model
@@ -183,27 +169,16 @@ User text profiles only use training-split reviews. Item profiles use all review
 
 **Other:**
 - `scripts/encode_text.py` — CLI for encoding reviews
-- `scripts/fit_itemknn.py` — fits + pickles ItemKNN to `results/baselines/itemknn.pkl`
+- `scripts/fit_itemknn.py` — fits + pickles ItemKNN to `results/baselines/itemknn.pkl` (input to ensemble + two-stage; the existing baselines runner only saved metric JSONs)
 - `scripts/run_text_ncf_all.sh` — full reproduction driver
-- `scripts/compute_rmse.py` — extended with `--text-ncf-*` flags for rating metrics
+- `scripts/compute_rmse.py` — extended (additively) with `--text-ncf-ckpt` / `--text-ncf-mt-ckpt` / `--text-ncf-subrating-ckpt` flags so the shared rating tooling now covers TextNCF too
+- `variants/pramod/notebooks/07_text_ncf.ipynb` — executed walkthrough
 - `results/text_ncf*/` — per-variant outputs (test_metrics, rating_metrics, ensemble_metrics, two_stage_metrics, summary.md)
 
-Two shared files were touched in non-breaking ways: `src/data/subratings.py`
+I touched two shared files in non-breaking ways: `src/data/subratings.py`
 to fix the sub-rating column names (the parquet uses `service`,
 `cleanliness`, …, not the `rating_<aspect>` names the loader was looking
 for), and `scripts/compute_rmse.py` to add TextNCF-family flags
-following the same pattern used for GMF / LightGCN-HG. All models
+following the same pattern Hriday used for GMF / LightGCN-HG. All models
 store text embeddings as PyTorch buffers so `forward(users, items)`
 works with the shared eval code without any other changes.
-
----
-
-## Notebooks
-
-- [`notebooks/07_text_ncf.ipynb`](notebooks/07_text_ncf.ipynb) — TextNCF family walkthrough: base + ablations + MT + sub-rating + ensemble + two-stage.
-
-Shared notebooks at the repo root:
-
-- [`../../notebooks/01_preprocessing.ipynb`](../../notebooks/01_preprocessing.ipynb)
-- [`../../notebooks/02_baselines.ipynb`](../../notebooks/02_baselines.ipynb)
-- [`../../notebooks/05_ensemble_and_summary.ipynb`](../../notebooks/05_ensemble_and_summary.ipynb)
