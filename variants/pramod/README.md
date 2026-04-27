@@ -181,6 +181,17 @@ to LightGCN-HG's geography lift over vanilla LightGCN.
 | Ensemble (TextNCF + GMF + KNN) | 0.6870 | 0.6093 | grid picked KNN-only - degenerate |
 | Two-stage (KNN → TextNCF) | 0.3858 | 0.2977 | gt_recall@200 = 5 % - recall-bound |
 
+**Deltas vs GMF baseline (best single-model comparison):**
+
+| Metric | TextNCF MT Δ (abs) | TextNCF MT Δ (rel) |
+|--------|-------------------|-------------------|
+| HR@5   | +0.0189 | +3.4% |
+| HR@10  | +0.0179 | +2.7% |
+| HR@20  | +0.0095 | +1.2% |
+| NDCG@5 | +0.0236 | +5.2% |
+| NDCG@10| +0.0234 | +4.8% |
+| NDCG@20| +0.0213 | +4.1% |
+
 Calibrated RMSE for the trained variants is **0.93** (slope ≈ 0.01-0.03)
 - same flat-calibration pattern SASRec / GMF / LightGCN-HG hit. Popularity
 wins RMSE at 0.8685.
@@ -258,6 +269,16 @@ not a substitute for the team-wide meta-ensemble.
 All models store text embeddings as PyTorch buffers so
 `forward(users, items)` works with the shared `evaluate_ranking` code
 without any other changes.
+
+## Notebooks
+
+- [`notebooks/text_ncf.ipynb`](notebooks/text_ncf.ipynb) - TextNCF family walkthrough: base + ablations + MT + sub-rating + ensemble + two-stage.
+
+Shared notebooks at the repo root:
+
+- [`../../notebooks/preprocessing.ipynb`](../../notebooks/preprocessing.ipynb)
+- [`../../notebooks/baselines.ipynb`](../../notebooks/baselines.ipynb)
+- [`../../notebooks/ensemble_and_summary.ipynb`](../../notebooks/ensemble_and_summary.ipynb)
 
 ## References
 
