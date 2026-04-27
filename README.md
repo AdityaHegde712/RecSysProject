@@ -29,17 +29,23 @@ We use the 20-core subset (users and items with ≥ 20 interactions each).
 ├── src/                         # All source code
 │   ├── data/
 │   │   ├── preprocess.py        # Raw JSONL → k-core filtered parquet (two-pass)
+│   │   ├── preprocess_zip.py    # Same pipeline streaming directly from the .zip
 │   │   ├── split.py             # Train/val/test splitting (80/10/10)
 │   │   ├── dataset.py           # PyTorch Datasets + DataLoader factory
-│   │   └── sequential.py        # Per-user chronological sequence dataset (SASRec)
+│   │   ├── sequential.py        # Per-user chronological sequence dataset (SASRec)
+│   │   ├── subratings.py        # Sub-rating loader (NeuMF-Attn + TextNCF Sub-Rating)
+│   │   └── text_embeddings.py   # MiniLM review encoder + per-user/per-item aggregation
 │   ├── models/
 │   │   ├── knn.py               # ItemKNN
 │   │   ├── gmf.py               # Generalized Matrix Factorization
+│   │   ├── popularity.py        # Popularity baseline
+│   │   ├── common.py            # Model factory
 │   │   ├── lightgcn_hg.py       # LightGCN-HG (secondary variant: metadata-augmented graph)
 │   │   ├── sasrec.py            # SASRec (primary variant: self-attentive sequential)
 │   │   ├── neumf_attn.py        # NeuMF-Attn (Variant B: sub-rating attention)
-│   │   ├── popularity.py        # Popularity baseline
-│   │   └── common.py            # Model factory
+│   │   ├── text_ncf.py          # TextNCF base hybrid (Variant C)
+│   │   ├── text_ncf_mt.py       # TextNCF Multi-Task (BPR + rating MSE)
+│   │   └── text_ncf_subrating.py # TextNCF Sub-Rating decomposition
 │   ├── graph/
 │   │   └── hetero_adj.py        # Torch-free scipy builder for the HG adjacency
 │   ├── evaluation/
@@ -48,9 +54,14 @@ We use the 20-core subset (users and items with ≥ 20 interactions each).
 │   ├── utils/
 │   ├── run_baselines.py         # Run Popularity + ItemKNN
 │   ├── train_gmf.py             # GMF trainer
-│   ├── train_lightgcn_hg.py     # LightGCN-HG trainer
+│   ├── train_lightgcn_hg.py     # LightGCN-HG trainer (--tiers none gives vanilla LightGCN)
 │   ├── train_sasrec.py          # SASRec trainer
-│   ├── train_neumf_attn.py      # NeuMF-Attn trainer
+│   ├── train_neumf_attn.py      # NeuMF-Attn trainer (model.use_attention toggles enhanced/vanilla)
+│   ├── train_text_ncf.py        # TextNCF base + ablation trainer (use_gmf / use_text toggles)
+│   ├── train_text_ncf_mt.py     # TextNCF Multi-Task trainer
+│   ├── train_text_ncf_subrating.py # TextNCF Sub-Rating trainer
+│   ├── evaluate_ensemble.py     # Per-user weighted blend of TextNCF + GMF + ItemKNN (Pramod)
+│   ├── evaluate_two_stage.py    # ItemKNN top-200 retrieval -> TextNCF re-rank (Pramod)
 │   └── phase3_meta_ensemble.py  # Phase 3 LightGBM meta-learner over 4 base models
 │
 ├── variants/                    # Phase 2: one folder per team member
@@ -66,7 +77,8 @@ We use the 20-core subset (users and items with ≥ 20 interactions each).
 │   ├── sasrec.yaml              # SASRec (primary)
 │   ├── neumf_attn.yaml          # NeuMF-Attn (Variant B, enhanced)
 │   ├── neumf_vanilla.yaml       # NeuMF-Attn (Variant B, vanilla ablation)
-│   └── text_ncf*.yaml           # TextNCF family (Variant C, 3 configs)
+│   ├── text_ncf.yaml / text_ncf_mt.yaml / text_ncf_subrating.yaml   # TextNCF family
+│   └── _ablations/              # Auto-derived GMF-only / text-only configs (run_text_ncf_all.sh)
 │
 ├── scripts/                     # End-to-end reproducibility scripts
 │   ├── download_data.sh         # Fetch HotelRec.txt into data/raw/
@@ -98,7 +110,8 @@ We use the 20-core subset (users and items with ≥ 20 interactions each).
 │
 ├── extras/                      # Off-path tooling (not required for repro)
 │   ├── hpc/                     # Pramod's SLURM/HPC convenience layer
-│   └── dev_tooling/             # summary.md auto-generators (frozen since hand-edited)
+│   ├── dev_tooling/             # summary.md auto-generators (frozen since hand-edited)
+│   └── docs_phase1/             # Archived Phase 1 onboarding docs
 │
 └── data/                        # (gitignored) Raw & processed data
 ```
