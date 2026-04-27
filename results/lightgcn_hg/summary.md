@@ -4,7 +4,7 @@ Metadata-augmented LightGCN variant (secondary). Extends the (user, item) bipart
 
 See [`variants/hriday/README.md`](../../variants/hriday/README.md) for the design doc and the decision trail that led to SASRec as the primary variant. Walkthrough in [`variants/hriday/notebooks/lightgcn_hg.ipynb`](../../variants/hriday/notebooks/lightgcn_hg.ipynb).
 
-## Vanilla vs HG (instructor's day-10 vanilla-vs-enhanced ask)
+## Vanilla vs HG
 
 The two configs use the same harness (`src/train_lightgcn_hg.py`); the only
 difference is whether the bipartite user-item graph is augmented with

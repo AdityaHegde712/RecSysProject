@@ -1,20 +1,20 @@
-# Hotel Recommendation on HotelRec
+# Team 3 - Recommender Systems on the HotelRec Dataset
+
+Team Members: Hriday Ampavatina, Pramod Yadav, Aditya Hegde
 
 CMPE 256 - Recommender Systems, Spring 2026
-Team: Aditya Hegde, Pramod Yadav, Hriday Ampavatina
 
 ## Overview
 
-We build and compare multiple recommender system approaches on the [HotelRec](https://github.com/Diego999/HotelRec) dataset - 50M TripAdvisor hotel reviews. The project has three phases:
-
-1. **Shared foundation** (Phase 1): data pipeline, baselines, evaluation framework.
-2. **Individual variants** (Phase 2): each member builds one advanced method.
-3. **Integration** (Phase 3): a LightGBM meta-learner trained on out-of-fold predictions from all three variants as the final submission model.
+We built and compared multiple recommender system approaches on the [HotelRec](https://github.com/Diego999/HotelRec) dataset - 50M TripAdvisor hotel reviews. The project has three phases:
+1. Shared foundation (Phase 1): data pipeline, baselines, evaluation framework.
+2. Individual variants (Phase 2): each member builds one advanced method.
+3. Integration (Phase 3): a LightGBM meta-learner trained on predictions from all three variants. 
 
 ## Dataset
 
-**HotelRec** (Antognini & Faltings, LREC 2020) - ~50M hotel reviews, 365K hotels, 22M users.
-Full-dataset stats in [`results/data_evaluation.json`](results/data_evaluation.json).
+The HotelRec dataset (Antognini & Faltings, LREC 2020) has around 50M hotel reviews, 365K hotels, and 22M users.
+The full dataset stats are in [`results/data_evaluation.json`](results/data_evaluation.json).
 
 | Subset | Users | Items | Interactions | Sparsity |
 |--------|-------|-------|-------------|----------|
@@ -163,14 +163,12 @@ python scripts/compute_rmse.py --kcore 20 \
 
 ## Evaluation Protocol
 
-Following He et al. (2017):
+We followed He et al. (2017) and used the 1-vs-99 evaluation (1 positive + 99 random negatives) methodology:
 
 1. For each test interaction, take the positive item.
 2. Sample 99 random negatives the user never interacted with.
 3. Rank all 100 candidates by model score (using `torch.sort` for consistent tie-breaking across models).
 4. Compute **HR@k** and **NDCG@k** at k = 5, 10, 20.
-
----
 
 ## Results (20-core test set, 1-vs-99)
 
@@ -207,28 +205,26 @@ Following He et al. (2017):
 | SASRec (Hriday, calibrated) | 0.9315 | 0.7048 |
 | **Phase 3 meta-ensemble** (calibrated) | **0.8350** | **0.6164** |
 
-Ranking-trained models (BPR) all land at RMSE ≈ 0.93 - the calibration slope is near zero because BPR scores encode pairwise ranking, not rating levels. Popularity wins RMSE because 78% of HotelRec ratings are 4-5 stars, so item-mean is near-optimal on this rating distribution. The Phase 3 LGBMRanker meta-ensemble is the only ranking-trained pipeline that beats Popularity on RMSE (0.8350 vs 0.8685) - its blended score has more usable variance for an lstsq calibrator than any single BPR base model. On ranking, however, the meta-ensemble lands well below SASRec alone, the strong-model dilution effect under naïve per-user normalisation.
+Ranking-trained models (BPR) all land at RMSE ≈ 0.93. The calibration slope is near zero because BPR scores encode pairwise ranking, not rating levels. Popularity wins RMSE because 78% of HotelRec ratings are 4-5 stars, so item-mean is near-optimal on this rating distribution. The Phase 3 LGBMRanker meta-ensemble is the only ranking-trained pipeline that beats Popularity on RMSE (0.8350 vs 0.8685) because its blended score has more usable variance for an lstsq calibrator than any single BPR base model. On ranking, however, the meta-ensemble lands well below SASRec alone, the strong-model dilution effect under naive per-user normalisation.
 
 ## Phase 2 Variants
 
 | Member | Variant | Key Idea |
 |--------|---------|----------|
 | Hriday | **SASRec** (primary) + LightGCN-HG (secondary) | Self-attentive sequential recommendation over time-ordered hotel sequences (uses `date`), plus a graph-based secondary with TripAdvisor location / region / country pivot nodes |
-| Aditya | **NeuMF-Attn** (vanilla + enhanced) | NeuMF backbone (GMF + MLP) with an optional per-user attention layer over six sub-rating aspects. Vanilla HR@10 = 0.7254, enhanced 0.7245 - attention head adds ~0 on this dataset. |
-| Pramod | **TextNCF - Multi-Task** (best of family) | Frozen MiniLM review embeddings fused with GMF branch; MT head adds a rating-MSE regulariser (α=0.7) - NDCG@10 = 0.5097 |
+| Aditya | **NeuMF-Attn** | NeuMF backbone (GMF + MLP) with an optional per-user attention layer over six sub-rating aspects. Vanilla HR@10 = 0.7254, enhanced 0.7245 - attention head adds around 0 on this dataset. |
+| Pramod | **TextNCF - Multi-Task** | Frozen MiniLM review embeddings fused with GMF branch. MT head adds a rating-MSE regulariser (α=0.7) - NDCG@10 = 0.5097 |
 
 ## Phase 3 Integration
 
-Implemented as a `LGBMRanker` (lambdarank objective) over per-user min-max normalised scores from the four headline models - SASRec (Hriday primary), LightGCN-HG (Hriday secondary), NeuMF-Attn (Aditya enhanced), TextNCF Multi-Task (Pramod enhanced). Trained on val (1+99 candidates per user, label = held-out positive), evaluated on test.
+We implemented a `LGBMRanker` (lambdarank objective) over per-user min-max normalised scores from the four headline models - SASRec (Hriday primary), LightGCN-HG (Hriday secondary), NeuMF-Attn (Aditya enhanced), TextNCF Multi-Task (Pramod enhanced). Trained on val (1+99 candidates per user, label = held-out positive), evaluated on test.
 
 **Mixed result:**
-- **Ranking:** the meta-ensemble lands at HR@10 = 0.7739 / NDCG@10 = 0.5843
-  - better than every non-sequential base model, but around 10pp below SASRec alone. Strong-model dilution under naïve per-user normalisation: split-
-  gain feature importance (text_ncf_mt 2582 ≥ neumf_attn 2419 ≥ lightgcn_hg 2345 ≥ sasrec 1654) confirms the LGBMRanker treats all four columns democratically once they're squashed to [0, 1].
-- **Rating:** the meta-ensemble's calibrated RMSE = 0.8350, MAE = 0.6164. Slope a = 0.0261 (~30× any single BPR base model), beating Popularity (0.8685) and every individual variant. The blend's varied output
-  distribution gives the lstsq calibrator material to work with that no single BPR ranker provides.
+- The meta-ensemble lands at HR@10 = 0.7739 / NDCG@10 = 0.5843. It's better than every non-sequential base model, but around 10pp below SASRec alone. 
+ - Strong-model dilution under naive per-user normalisation: split-gain feature importance (text_ncf_mt 2582 ≥ neumf_attn 2419 ≥ lightgcn_hg 2345 ≥ sasrec 1654) confirms the LGBMRanker treats all four columns democratically once they're squashed to [0, 1].
+- Rating: the meta-ensemble's calibrated RMSE = 0.8350, MAE = 0.6164. Slope a = 0.0261 (around 30x any single BPR base model), beating Popularity (0.8685) and every individual variant. The blend's varied output distribution gives the lstsq calibrator material to work with that no single BPR ranker provides.
 
-Full walkthrough + feature-importance plot + future-work suggestions in [`notebooks/ensemble_and_summary.ipynb`](notebooks/ensemble_and_summary.ipynb)
+The full walkthrough + feature-importance plot + future-work suggestions are in [`notebooks/ensemble_and_summary.ipynb`](notebooks/ensemble_and_summary.ipynb)
 
 ## Notebooks
 
@@ -244,48 +240,41 @@ Every reported number traces back to an executed notebook cell:
 
 ## Reproducibility
 
-**Canonical environment (what the shipped numbers were produced on):**
+**The Canonical environment (what the shipped numbers were produced on):**
 - Windows 11, Python 3.11
-- PyTorch nightly with CUDA 12.8 (RTX 5070 Ti / Blackwell - `cu124` will not load on this GPU; the nightly is required for the SM_120 kernel).
+- PyTorch nightly with CUDA 12.8 (RTX 5070 Ti / Blackwell - `cu124` will not load on this GPU. The nightly is required for the SM_120 kernel).
   ```bash
   pip install --pre torch torchvision torchaudio \
       --index-url https://download.pytorch.org/whl/nightly/cu128
   ```
 - The remaining dependencies pin via `requirements.txt`.
 
-**Total time for an end-to-end re-run (RTX 5070 Ti):**
+**Total estimated time for a fresh end-to-end re-run (RTX 5070 Ti):**
 
 | Step | Cost | Notes |
 |---|---|---|
-| Data download | network-bound | ~50 GB zip, single fetch |
-| Preprocessing (k-core + split) | ~25 min | streaming JSONL, two-pass |
-| Baselines (Popularity + ItemKNN + GMF) | ~30 min | step 4-5 |
-| LightGCN vanilla + HG | ~100 min | step 7 |
-| SASRec | ~15 min | step 8 |
-| NeuMF vanilla + enhanced | ~200 min | step 9 |
-| TextNCF family (5 trainings + ensemble + two-stage + RMSE) | ~80 min | step 10 |
-| Phase 3 meta-ensemble | ~2 min | step 11 |
-| RMSE pass for all | ~5 min | step 12 |
-| **Total** | **≈ 7.5 hours** | overnight on a single GPU |
+| Data download | network-bound | around 50 GB zip, single fetch |
+| Preprocessing (k-core + split) | 25 min | streaming JSONL, two-pass |
+| Baselines (Popularity + ItemKNN + GMF) | 30 min | step 4-5 |
+| LightGCN vanilla + HG | 100 min | step 7 |
+| SASRec | 15 min | step 8 |
+| NeuMF vanilla + enhanced | 200 min | step 9 |
+| TextNCF family (5 trainings + ensemble + two-stage + RMSE) | 80 min | step 10 |
+| Phase 3 meta-ensemble | 2 min | step 11 |
+| RMSE pass for all | 5 min | step 12 |
+| **Total** | **≈ 7.5 hours** | probably overnight on a single GPU |
 
-**HPC alternative.** Pramod's SLURM layer lives in `extras/hpc/`
-(`run_hpc.sh`, aliases, `requirements-hpc.txt`). Optional. The canonical local path above is what was used for every shipped result.
+**HPC alternative (Optional - not tested for all variants):** Pramod's SLURM layer lives in extras/hpc/ (run_hpc.sh, aliases, requirements-hpc.txt). The canonical local path above is what was used for every shipped result.
 
-## AI tool disclosure
+## AI Tool Disclosure
 
-Per the project guidelines, AI tools were used as follows. Each variant section's design decision log captures the substantive choices each
-member made - when AI suggested an approach, what they tried, and what they concluded.
+Each variant section's design decision log captures the design and architectural choices each member made (when AI suggested an approach, what they tried, and what they concluded). AI tools were used as follows: 
 
-**Used:**
-- **Claude** (Anthropic) - code scaffolding, scripts generation, debugging assistance, literature recall, prose review. Specific contributions: shared evaluation framework boilerplate, model class skeletons, README and summary drafting from concrete numbers, Phase 3 LightGBM harness.
-- **GitHub Copilot** - inline completion during coding.
-
-**Not used:**
-- AI for authoring final report and presentation. The unified report is written by us with at most grammar/typo correction.
-- AI for any data-leakage decisions (train-only profile aggregation, candidate-set construction, calibration-set choice) - those came from the team's own discussion of the protocol.
+- Claude and Claude Code (Anthropic) - code scaffolding, scripts generation, debugging assistance, literature recall, prose review. Specific contributions include shared evaluation framework boilerplate, variant scripts and skeleton codes, partial README and summary drafting from concrete numbers, Phase 3 LightGBM harness, help with commit messages, and PR analysis.
+- GitHub Copilot - PR Analysis, inline completion during coding in VSCode.
+- Grok - Helping with interpretation on notebook results and literature research on the recommender systems.
 
 ## References
-
 - Antognini & Faltings (2020). *HotelRec.* LREC.
 - He et al. (2017). *Neural Collaborative Filtering.* WWW.
 - He et al. (2020). *LightGCN.* SIGIR.
