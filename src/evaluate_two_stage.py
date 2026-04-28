@@ -4,8 +4,7 @@ Two-stage retrieval + ranking evaluation.
 Stage 1: ItemKNN retrieves top-200 candidates per user (fast, sparse)
 Stage 2: TextNCF re-ranks those 200 candidates (slow, neural)
 
-This mimics a production setup where you can't score all items with
-a neural model, so you use a cheap retriever first.
+This mimics a production setup where you can't score all items with a neural model, so you use a cheap retriever first.
 
 Usage:
     python -m src.evaluate_two_stage \

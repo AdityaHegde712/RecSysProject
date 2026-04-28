@@ -1,11 +1,8 @@
 """
 Train LightGCN-HG (metadata-augmented LightGCN) on HotelRec.
 
-Same BPR / cosine-LR / early-stop loop as train_lightgcn.py; the only change
-is the graph (build_hg_norm_adj) and the model (LightGCNHG). Tiers are
-configurable so that the vanilla bipartite model, a g_id-only variant, and
-the full g_id+region+country variant can all be run from this one entry
-point.
+Same BPR / cosine-LR / early-stop loop as train_lightgcn.py; the only change is the graph (build_hg_norm_adj) and the model (LightGCNHG). Tiers are
+configurable so that the vanilla bipartite model, a g_id-only variant, and the full g_id+region+country variant can all be run from this one entry point.
 
 Usage
 -----

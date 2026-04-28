@@ -1,8 +1,7 @@
 """
 Data loading for HotelRec.
 
-Provides both simple DataFrame loaders (for ItemKNN) and PyTorch Dataset
-classes (for neural models like GMF).
+Provides both simple DataFrame loaders (for ItemKNN) and PyTorch Dataset classes (for neural models like GMF).
 """
 
 import os

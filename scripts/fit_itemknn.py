@@ -1,7 +1,6 @@
 """Fit ItemKNN on the 20-core training split and pickle it to results/baselines/itemknn.pkl.
 
-Needed by src/evaluate_ensemble.py and src/evaluate_two_stage.py, which expect
-a pre-fit pickled ItemKNN.
+Needed by src/evaluate_ensemble.py and src/evaluate_two_stage.py, which expect a pre-fit pickled ItemKNN.
 """
 
 import argparse

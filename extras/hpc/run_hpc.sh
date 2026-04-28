@@ -14,9 +14,9 @@
 #SBATCH --mail-type=END,FAIL,TIME_LIMIT
 #SBATCH --mail-user=pramod.yadav@sjsu.edu
 #
-# HotelRec — SJSU CoE HPC Experiment Runner
+# HotelRec - SJSU CoE HPC Experiment Runner
 #
-# FIRST TIME SETUP (run on the login node — has internet):
+# FIRST TIME SETUP (run on the login node - has internet):
 #   bash scripts/setup_env.sh
 #
 # Then submit experiments:
@@ -65,7 +65,7 @@ mkdir -p logs results
 VENV_DIR="${PROJECT_DIR}/venv"
 
 echo "============================================"
-echo "HotelRec — HPC Job"
+echo "HotelRec - HPC Job"
 echo "============================================"
 echo "Job ID:      ${SLURM_JOB_ID:-local}"
 echo "Node:        ${SLURM_NODELIST:-$(hostname)}"
@@ -74,7 +74,7 @@ echo "Date:        $(date)"
 echo "============================================"
 
 # ─────────────────────────────────────────────────────────────────────
-# ENVIRONMENT ACTIVATION (used by batch jobs — no internet needed)
+# ENVIRONMENT ACTIVATION (used by batch jobs - no internet needed)
 # ─────────────────────────────────────────────────────────────────────
 activate_env() {
     module load python3 2>/dev/null || true
@@ -125,7 +125,7 @@ else:
 }
 
 # ─────────────────────────────────────────────────────────────────────
-# STEP 0: One-time setup (run on LOGIN NODE — has internet)
+# STEP 0: One-time setup (run on LOGIN NODE - has internet)
 # Delegates to setup_env.sh which handles venv + pip wheels.
 # ─────────────────────────────────────────────────────────────────────
 setup_environment() {
@@ -136,7 +136,7 @@ setup_environment() {
 }
 
 # ─────────────────────────────────────────────────────────────────────
-# STEP 0.5: Download data (login node only — needs internet)
+# STEP 0.5: Download data (login node only - needs internet)
 # ─────────────────────────────────────────────────────────────────────
 run_download() {
     echo ""
@@ -145,7 +145,7 @@ run_download() {
 }
 
 # ─────────────────────────────────────────────────────────────────────
-# STEP 1: Preprocessing (streams directly from zip — no extraction)
+# STEP 1: Preprocessing (streams directly from zip - no extraction)
 # ─────────────────────────────────────────────────────────────────────
 MAX_REVIEWS=""  # set by run-sample to limit reviews
 
@@ -158,7 +158,7 @@ run_preprocess() {
     if [ -d "$KCORE_DIR" ] && [ -f "${KCORE_DIR}/train.parquet" ]; then
         n=$(python -c "import pandas as pd; print(len(pd.read_parquet('${KCORE_DIR}/train.parquet')))" 2>/dev/null || echo "0")
         if [ "$n" -gt 0 ]; then
-            echo "[OK] Processed data exists (${n} training rows) — skipping"
+            echo "[OK] Processed data exists (${n} training rows) - skipping"
             return 0
         fi
     fi
@@ -172,7 +172,7 @@ run_preprocess() {
         echo ""
         echo "ERROR: No data found in data/raw/"
         echo ""
-        echo "Download the dataset first (on the login node — needs internet):"
+        echo "Download the dataset first (on the login node - needs internet):"
         echo "  bash scripts/download_data.sh full"
         echo ""
         echo "Or use the alias:"
@@ -205,7 +205,7 @@ run_preprocess() {
 }
 
 # ─────────────────────────────────────────────────────────────────────
-# STEP 2: Training — baselines
+# STEP 2: Training - baselines
 # ─────────────────────────────────────────────────────────────────────
 train_rec() {
     echo ""
@@ -226,7 +226,7 @@ run_encode() {
 
     EMB_DIR="data/processed/text_emb"
     if [ -f "${EMB_DIR}/user_text_emb.npy" ] && [ -f "${EMB_DIR}/item_text_emb.npy" ]; then
-        echo "[OK] Text embeddings already exist — skipping"
+        echo "[OK] Text embeddings already exist - skipping"
         return 0
     fi
 
@@ -238,7 +238,7 @@ run_encode() {
 }
 
 # ─────────────────────────────────────────────────────────────────────
-# STEP 4: Training — TextNCF variant
+# STEP 4: Training - TextNCF variant
 # ─────────────────────────────────────────────────────────────────────
 EPOCH_FLAG=""  # set by run-sample to override epochs
 
@@ -284,11 +284,11 @@ MODE="${1:-all}"
 
 case "$MODE" in
     setup)
-        # setup runs on login node (has internet) — NOT via sbatch
+        # setup runs on login node (has internet) - NOT via sbatch
         setup_environment
         ;;
     download)
-        # download runs on login node (has internet) — NOT via sbatch
+        # download runs on login node (has internet) - NOT via sbatch
         run_download "${2:-full}"
         ;;
     preprocess)
@@ -351,7 +351,7 @@ case "$MODE" in
         run_two_stage
         echo ""
         echo "=========================================="
-        echo "  ALL DONE — Results:"
+        echo "  ALL DONE - Results:"
         echo "    results/text_ncf/test_metrics.json"
         echo "    results/text_ncf_mt/test_metrics.json"
         echo "    results/text_ncf_subrating/test_metrics.json"
@@ -369,7 +369,7 @@ case "$MODE" in
         run_encode
         echo ""
         echo "=========================================="
-        echo "  SMOKE TEST — 2 epochs, ${MAX_REVIEWS:-all} reviews"
+        echo "  SMOKE TEST - 2 epochs, ${MAX_REVIEWS:-all} reviews"
         echo "=========================================="
         train_text_ncf
         train_text_ncf_mt

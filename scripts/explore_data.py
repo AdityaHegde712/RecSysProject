@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 """
-Explore the raw HotelRec dataset and print statistics for the Day 6 checkpoint.
+Explore the raw HotelRec dataset and print statistics.
 
-Reads JSONL files from the raw data directory, computes counts, distributions,
-and coverage stats, then prints a formatted summary you can paste straight
-into the checkpoint document.
+Reads JSONL files from the raw data directory, computes counts, distributions, and coverage stats, then prints a formatted summary.
 
-Uses streaming/online statistics (Welford's algorithm) so memory stays O(1)
-for all accumulators except user_review_counts and item_review_counts (which
-are needed for per-user/per-item stats and cannot be avoided).
+Uses streaming/online statistics (Welford's algorithm) so memory stays O(1) for all accumulators except user_review_counts and 
+item_review_counts (which are needed for per-user/per-item stats and cannot be avoided).
 
 Usage:
     python scripts/explore_data.py --data_dir data/raw --sample_size 0
@@ -26,7 +23,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 
-# ── streaming stats helper ───────────────────────────────────────────────────
+# streaming stats helper
 
 class RunningStats:
     """Welford's online algorithm for mean and variance in O(1) memory."""
@@ -95,7 +92,7 @@ def _median_from_counter(counter: Counter) -> float:
     return 0.0
 
 
-# ── helpers ──────────────────────────────────────────────────────────────────
+# helpers
 
 SUB_RATING_KEYS = [
     "service", "cleanliness", "location", "value",
@@ -134,9 +131,7 @@ def _length_bucket_key(word_count: int) -> str:
 
 def stream_file(fpath: str):
     """
-    Stream reviews from a JSON file one at a time. Uses ijson for large files
-    (>100MB) to avoid loading 10GB into RAM. Falls back to json.load for
-    small files.
+    Stream reviews from a JSON file one at a time. Uses ijson for large files (>100MB) to avoid loading 10GB into RAM. Falls back to json.load for small files.
     """
     fsize = os.path.getsize(fpath)
 
@@ -149,9 +144,9 @@ def stream_file(fpath: str):
             return
         except ImportError:
             print("  WARNING: ijson not installed. pip install ijson")
-            print("  Falling back to json.load — may OOM on large files.")
+            print("  Falling back to json.load - may OOM on large files.")
 
-    # Small file or no ijson — load directly
+    # Small file or no ijson - load directly
     with open(fpath, "r", encoding="utf-8", errors="replace") as f:
         first_char = ""
         for raw in f:
@@ -181,8 +176,7 @@ def stream_file(fpath: str):
                     continue
 
 
-# ── main logic ───────────────────────────────────────────────────────────────
-
+# main logic
 def find_data_source(data_dir: str):
     """
     Find the data source. Could be:
@@ -260,7 +254,7 @@ def stream_archive(archive_path):
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     continue
     else:
-        # tar handling — same fix for .txt
+        # tar handling - same fix for .txt
         with _tarfile.open(path_str, "r:*") as tar:
             for member in tar:
                 if not member.isfile():
@@ -311,7 +305,7 @@ def explore(data_dir: str, sample_size: int = 0):
         print(f"Found archive: {source.name} ({source.stat().st_size / 1e9:.1f} GB)")
         print("Streaming reviews directly from archive (no extraction needed)")
         review_stream = stream_archive(source)
-        n_files = 1  # single archive
+        n_files = 1 
     else:
         all_files = source
         total_files = len(all_files)
@@ -324,7 +318,7 @@ def explore(data_dir: str, sample_size: int = 0):
         review_stream = None  # will iterate files below
     print()
 
-    # ── Streaming accumulators (O(1) memory except Counters) ──────────
+    # Streaming accumulators (O(1) memory except Counters)
 
     total_reviews = 0
 
@@ -344,16 +338,16 @@ def explore(data_dir: str, sample_size: int = 0):
     sub_rating_counts = {k: 0 for k in SUB_RATING_KEYS}
     sub_rating_stats = {k: RunningStats() for k in SUB_RATING_KEYS}
 
-    # User/item Counters (unavoidable — needed for per-user/per-item stats)
+    # User/item Counters (unavoidable - needed for per-user/per-item stats)
     user_review_counts = Counter()
     item_review_counts = Counter()
 
     # Build a unified review iterator
     if review_stream is not None:
-        # archive mode — already have a generator
+        # archive mode - already have a generator
         rec_iter = review_stream
     else:
-        # file mode — chain all files
+        # file mode - chain all files
         def _file_iter():
             for idx, fpath in enumerate(all_files):
                 if (idx + 1) % 500 == 0 or idx == 0:
@@ -393,7 +387,7 @@ def explore(data_dir: str, sample_size: int = 0):
             bucket = _length_bucket_key(word_count)
             length_bucket_counts[bucket] += 1
 
-        # Date — extract year inline instead of storing the string
+        # Date - extract year inline instead of storing the string
         date_val = rec.get("date", "")
         if date_val:
             d_str = str(date_val).strip()
@@ -406,7 +400,7 @@ def explore(data_dir: str, sample_size: int = 0):
                 except ValueError:
                     continue
 
-        # Sub-ratings — could be in property_dict or top-level
+        # Sub-ratings - could be in property_dict or top-level
         prop = rec.get("property_dict", {}) or {}
         for key in SUB_RATING_KEYS:
             # Check property_dict first, then top-level (with underscore variant)
@@ -420,7 +414,7 @@ def explore(data_dir: str, sample_size: int = 0):
                 except (ValueError, TypeError):
                     pass
 
-    # ── compute derived stats ─────────────────────────────────────────────
+    # compute derived stats
 
     n_users = len(user_review_counts)
     n_items = len(item_review_counts)
@@ -436,7 +430,7 @@ def explore(data_dir: str, sample_size: int = 0):
     avg_per_user = n_interactions / n_users if n_users else 0
     avg_per_item = n_interactions / n_items if n_items else 0
 
-    # User activity distribution — build a Counter of {count: n_users}
+    # User activity distribution - build a Counter of {count: n_users}
     user_activity_hist = Counter()
     users_1_review = 0
     users_lt5 = 0
@@ -452,7 +446,7 @@ def explore(data_dir: str, sample_size: int = 0):
 
     median_per_user = _median_from_counter(user_activity_hist)
 
-    # Item popularity distribution — build a Counter of {count: n_items}
+    # Item popularity distribution - build a Counter of {count: n_items}
     item_popularity_hist = Counter()
     for c in item_review_counts.values():
         item_popularity_hist[c] += 1
@@ -474,11 +468,11 @@ def explore(data_dir: str, sample_size: int = 0):
         else:
             user_bucket_counts[f"{lo}-{hi}"] = count
 
-    # ── print results ─────────────────────────────────────────────────────
+    # print results
 
     sep = "=" * 70
     print(f"\n{sep}")
-    print("  HOTELREC DATASET — EXPLORATION SUMMARY")
+    print("  HOTELREC DATASET - EXPLORATION SUMMARY")
     if sample_size > 0:
         print(f"  (based on {n_files}/{total_files} files)")
     print(sep)
@@ -583,7 +577,7 @@ def explore(data_dir: str, sample_size: int = 0):
     else:
         print("  Could not parse dates.")
 
-    # ── markdown table for easy copy-paste ────────────────────────────────
+    # markdown table 
 
     print(f"\n{sep}")
     print("  COPY-PASTE TABLE FOR CHECKPOINT (Section 1a)")
@@ -616,7 +610,7 @@ def explore(data_dir: str, sample_size: int = 0):
     print(sep)
 
 
-# ── CLI ──────────────────────────────────────────────────────────────────────
+# CLI
 
 def main():
     parser = argparse.ArgumentParser(

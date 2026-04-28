@@ -1,7 +1,6 @@
 # Sub-Rating Decomposition TextNCF
 #
-# Predicts 6 aspect-level sub-ratings (Service, Cleanliness, Location,
-# Value, Rooms, Sleep Quality) with learned per-user attention weights.
+# Predicts 6 aspect-level sub-ratings (Service, Cleanliness, Location, Value, Rooms, Sleep Quality) with learned per-user attention weights.
 #
 # Loss: beta * BPR + (1-beta) * mean(MSE per aspect)
 

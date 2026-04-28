@@ -2,7 +2,7 @@
 
 Self-Attentive Sequential Recommendation (Kang & McAuley, ICDM 2018). Causal self-attention over per-user time-ordered hotel sequences, BPR loss, shared 1-vs-99 evaluation.
 
-See `variants/hriday/PLAN.md` for the decision trail from LightGCN-HG to SASRec as the primary variant.
+See [`variants/hriday/README.md`](../../variants/hriday/README.md) for the decision trail from LightGCN-HG to SASRec as the primary variant, plus the SASRec design decision log.
 
 ## Full-scale runs
 

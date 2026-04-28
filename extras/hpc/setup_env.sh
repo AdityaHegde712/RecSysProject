@@ -74,7 +74,7 @@ pip download --only-binary=:all: --dest "$WHEEL_DIR" \
 pip download --only-binary=:all: --dest "$WHEEL_DIR" \
     pyarrow==15.0.2 2>/dev/null || echo "  pyarrow download failed, will use CSV"
 
-# sentence-transformers deps (skip sentencepiece — not needed for MiniLM)
+# sentence-transformers deps (skip sentencepiece - not needed for MiniLM)
 pip download --only-binary=:all: --dest "$WHEEL_DIR" \
     tokenizers==0.15.2 huggingface-hub==0.21.4 \
     transformers==4.38.2 safetensors==0.4.2 regex || {
@@ -129,7 +129,7 @@ e = m.encode(['test'])
 print(f'sentence-transformers OK, dim={e.shape[1]}')
 print('All good.')
 " || {
-    echo "Import check failed — see error above"
+    echo "Import check failed - see error above"
     exit 1
 }
 

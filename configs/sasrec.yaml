@@ -1,9 +1,4 @@
 # SASRec (Kang & McAuley, ICDM 2018) on HotelRec 20-core.
-#
-# Bakeoff at dim=64 / 8 epochs already reached HR@10 = 0.833 and
-# NDCG@10 = 0.781 on test, beating every other model by wide margins.
-# This full-scale config bumps capacity + training length and drops
-# batch size slightly to reduce variance per step.
 
 model:
   name: sasrec

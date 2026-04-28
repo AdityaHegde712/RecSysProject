@@ -1,11 +1,4 @@
-# Variant B — **vanilla** NeuMF ablation (no sub-rating attention)
-#
-# Matches configs/neumf_attn.yaml on every hyperparameter except
-#   model.use_attention: false
-# so the two runs are directly comparable as vanilla vs enhanced.
-#
-# Added for the day-10 checkpoint "report both vanilla and enhanced"
-# instructor note.
+# Variant B - vanilla NeuMF ablation (no sub-rating attention)
 
 model:
   name: neumf_attn
@@ -13,7 +6,7 @@ model:
   mlp_dim: 64
   mlp_layers: [256, 128, 64]
   dropout: 0.3
-  use_attention: false           # <-- only difference from neumf_attn.yaml
+  use_attention: false           # <-- Difference from neumf_attn.yaml
 
 training:
   epochs: 50
@@ -34,8 +27,7 @@ evaluation:
   top_k: [5, 10, 20]
   num_negatives: 99
 
-# Sub-rating columns still listed for documentation, but the model ignores
-# them when use_attention is false.
+# Sub-rating columns still listed for documentation, but the model ignores them when use_attention is false.
 sub_ratings:
   columns: [service, cleanliness, location, value, rooms, sleep_quality]
 

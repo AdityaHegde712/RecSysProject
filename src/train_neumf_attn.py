@@ -1,21 +1,17 @@
 """
 Train NeuMF with Attention-Weighted Sub-Ratings (Variant B) on HotelRec.
 
-Architecture: NeuMF (GMF + MLP) extended with a per-user attention mechanism
-over 6 hotel sub-rating dimensions (Service, Cleanliness, Location, Value,
-Rooms, Sleep Quality). The attention-weighted sub-rating vector is fused into
-the final prediction layer, providing interpretable, aspect-aware scoring.
+Architecture: NeuMF (GMF + MLP) extended with a per-user attention mechanism over 6 hotel sub-rating dimensions (Service, Cleanliness, Location, Value,
+Rooms, Sleep Quality). The attention-weighted sub-rating vector is fused into the final prediction layer, providing interpretable, aspect-aware scoring.
 
 Sub-rating feature engineering
 -------------------------------
-Item aspect vectors are computed from the **train split only** to avoid
-data leakage. Missing sub-rating values are filled with the global mean of
+Item aspect vectors are computed from the train split only to avoid data leakage. Missing sub-rating values are filled with the global mean of
 that dimension across train rows that have at least one non-null value.
 
-Uses the same 1-vs-99 eval protocol as every other model in this repo:
-score the positive + 99 negatives, rank by score, compute HR@k and NDCG@k.
+Uses the same 1-vs-99 eval protocol as every other model in this repo: score the positive + 99 negatives, rank by score, compute HR@k and NDCG@k.
 
-Writes (same pattern when use_attention=False — see configs/neumf_vanilla.yaml):
+Writes (same pattern when use_attention=False - see configs/neumf_vanilla.yaml):
     results/<checkpoint_dir>/test_metrics_gmf{g}_mlp{m}.json
     results/<checkpoint_dir>/rating_metrics_gmf{g}_mlp{m}.json
     results/<checkpoint_dir>/best_model_gmf{g}_mlp{m}.pt
@@ -60,7 +56,7 @@ from src.utils.seed import set_seed
 from torch.utils.data import DataLoader
 from src.models.neumf_attn import N_ASPECTS, NeuMF_Attn
 
-# Sub-rating column names — must match both the parquet schema and the YAML.
+# Sub-rating column names - must match both the parquet schema and the YAML.
 SUB_RATING_COLS = ["service", "cleanliness", "location", "value", "rooms", "sleep_quality"]
 
 
@@ -79,7 +75,7 @@ def build_item_aspects(train_df: pd.DataFrame, n_items: int) -> torch.Tensor:
     cols = [c for c in SUB_RATING_COLS if c in train_df.columns]
     missing = [c for c in SUB_RATING_COLS if c not in train_df.columns]
     if missing:
-        print(f"  [aspects] Warning: columns not found in parquet — {missing}. "
+        print(f"  [aspects] Warning: columns not found in parquet - {missing}. "
               f"Setting those dimensions to 0.")
 
     # Compute per-item mean for available columns.
@@ -224,8 +220,8 @@ def val_bpr_loss(
         for users, items, _labels in loader:
             users = users.to(device)   # (B,)
             items = items.to(device)   # (B, C)
-            pos = items[:, 0]          # (B,)  — positive item
-            neg = items[:, 1]          # (B,)  — first sampled negative
+            pos = items[:, 0]          # (B,)  - positive item
+            neg = items[:, 1]          # (B,)  - first sampled negative
             pos_s, neg_s = model(users, pos, neg)
             loss = -torch.log(torch.sigmoid(pos_s - neg_s) + 1e-8).mean()
             total += loss.item()
@@ -234,7 +230,7 @@ def val_bpr_loss(
 
 
 # ---------------------------------------------------------------------------
-# Score → rating calibration (mirrors calibrate_sasrec in train_sasrec.py)
+# Score --> rating calibration (mirrors calibrate_sasrec in train_sasrec.py)
 # ---------------------------------------------------------------------------
 
 def calibrate_neumf(
@@ -369,13 +365,13 @@ def train(config: dict, kcore_dir: str):
           f"train batches={len(loaders['train'])}")
 
     # ---- Sub-rating aspect vectors (train-only, no leakage) ---------------
-    # Skipped when use_attention is False — the vanilla ablation doesn't
+    # Skipped when use_attention is False - the vanilla ablation doesn't
     # touch the aspect columns at all.
     if use_attention:
         print("Building item aspect vectors from train split...")
         item_aspects = build_item_aspects(train_df, n_items).to(device)
     else:
-        print("use_attention=False — vanilla NeuMF ablation (no aspect matrix).")
+        print("use_attention=False - vanilla NeuMF ablation (no aspect matrix).")
         item_aspects = None
 
     # ---- Model -------------------------------------------------------------

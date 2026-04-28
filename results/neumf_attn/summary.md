@@ -28,15 +28,15 @@ sub-rating attention head.
 |------------------------|--------|--------|--------|--------|---------|---------|--------|
 | Vanilla NeuMF          | 0.5978 | 0.7254 | 0.8468 | 0.4815 | 0.5228  | 0.5536  | 0.9304 |
 | **Enhanced NeuMF-Attn**| 0.5970 | 0.7245 | 0.8465 | 0.4809 | 0.5221  | 0.5530  | 0.9304 |
-| Δ (enhanced − vanilla) | −0.0008| −0.0009| −0.0003| −0.0006| −0.0007 | −0.0006 | 0.0000 |
+| Δ (enhanced - vanilla) | -0.0008| -0.0009| -0.0003| -0.0006| -0.0007 | -0.0006 | 0.0000 |
 
-**The sub-rating attention head adds zero signal** — every ranking metric
+**The sub-rating attention head adds zero signal** - every ranking metric
 moves *down* by 1e-3 (well within run-to-run BPR-sampler variance), and
 calibrated RMSE is identical. Diagnoses to follow up on (left for a
 follow-up run, not committed to this branch):
 
-- The aspect vector for each hotel is just six near-correlated 1–5 averages
-  (most hotels are 4–5 across the board on HotelRec). Softmax over six near-
+- The aspect vector for each hotel is just six near-correlated 1-5 averages
+  (most hotels are 4-5 across the board on HotelRec). Softmax over six near-
   identical values produces near-uniform attention regardless of the user.
 - The fusion layer's `+1` quality-score input may be getting weighted to ≈ 0
   by `weight_decay=1e-4` because the gradient through the attention path is
@@ -45,7 +45,7 @@ follow-up run, not committed to this branch):
   bonus would be the natural next experiment.
 
 This is the same dataset-level pattern Pramod's TextNCF sub-rating variant
-hit — softmax-over-aspects is a weak prior on HotelRec.
+hit - softmax-over-aspects is a weak prior on HotelRec.
 
 ## Cross-team headline ranking (test split)
 
@@ -54,7 +54,7 @@ hit — softmax-over-aspects is a weak prior on HotelRec.
 | Popularity (baseline)           | 0.3150 | 0.4215 | 0.5538 | 0.2318 | 0.2662  | 0.2995  |
 | GMF (baseline)                  | 0.5553 | 0.6685 | 0.7936 | 0.4498 | 0.4863  | 0.5179  |
 | ItemKNN (baseline, k=20)        | 0.6835 | 0.6870 | 0.7091 | 0.6082 | 0.6093  | 0.6150  |
-| TextNCF — Multi-Task (Pramod)   | 0.5742 | 0.6864 | 0.8031 | 0.4734 | 0.5097  | 0.5392  |
+| TextNCF - Multi-Task (Pramod)   | 0.5742 | 0.6864 | 0.8031 | 0.4734 | 0.5097  | 0.5392  |
 | Vanilla NeuMF                   | 0.5978 | 0.7254 | 0.8468 | 0.4815 | 0.5228  | 0.5536  |
 | **NeuMF-Attn (enhanced)**       | **0.5970** | **0.7245** | **0.8465** | **0.4809** | **0.5221** | **0.5530** |
 | LightGCN-HG (secondary, dim=256)| 0.6460 | 0.7591 | 0.8655 | 0.5352 | 0.5718  | 0.5988  |
@@ -63,7 +63,7 @@ hit — softmax-over-aspects is a weak prior on HotelRec.
 NeuMF (vanilla *or* enhanced) has the **best HR@10 and HR@20 among the
 non-sequential neural variants** (GMF, TextNCF family, NeuMF). Both NeuMF
 configs beat GMF by ~+8 % rel on HR@10 and beat the best TextNCF (Multi-Task)
-by ~+5.5 % rel. Only LightGCN-HG (different feature channel — hotel
+by ~+5.5 % rel. Only LightGCN-HG (different feature channel - hotel
 geography) and SASRec (sequence model) land above NeuMF.
 
 The big lift comes from the **MLP branch + bigger embeddings** (`mlp_dim=64`
@@ -76,20 +76,20 @@ Calibration fits `rating ≈ a · score + b` on the val split, evaluates on test
 
 | Model                   | RMSE   | MAE    | a       | b      |
 |-------------------------|--------|--------|---------|--------|
-| GlobalMean (sanity)     | 0.9315 | 0.7048 | —       | —      |
-| **Popularity (item-mean)** | **0.8685** | **0.6749** | —   | —      |
-| ItemKNN (k=20)          | 0.9590 | 0.7094 | —       | —      |
-| GMF                     | 0.9302 | 0.7002 | —       | —      |
+| GlobalMean (sanity)     | 0.9315 | 0.7048 | -       | -      |
+| **Popularity (item-mean)** | **0.8685** | **0.6749** | -   | -      |
+| ItemKNN (k=20)          | 0.9590 | 0.7094 | -       | -      |
+| GMF                     | 0.9302 | 0.7002 | -       | -      |
 | TextNCF Multi-Task      | 0.9304 | 0.7035 | 0.0128  | 4.1008 |
 | Vanilla NeuMF           | 0.9304 | 0.7035 | 0.0202  | 4.0727 |
 | **NeuMF-Attn (enhanced)** | 0.9304 | 0.7032 | 0.0208  | 4.0526 |
-| LightGCN-HG             | 0.9312 | 0.7025 | —       | —      |
-| SASRec                  | 0.9315 | 0.7048 | —       | —      |
+| LightGCN-HG             | 0.9312 | 0.7025 | -       | -      |
+| SASRec                  | 0.9315 | 0.7048 | -       | -      |
 
 Same flat-calibration pattern every BPR-trained ranker on this dataset
 exhibits: the slope `a` is near zero, so predicted ratings collapse to
 `b ≈ 4.05` (the train mean). Popularity wins RMSE because 78 % of HotelRec
-ratings are 4 or 5 stars — predicting the item-mean is near-optimal.
+ratings are 4 or 5 stars - predicting the item-mean is near-optimal.
 
 ## Training curve
 
@@ -97,7 +97,7 @@ Full 50 epochs ran without early-stopping (patience = 10 never triggered):
 HR@10 on val monotonically improved from 0.5972 at epoch 1 to 0.7235 at
 epoch 50. Train loss dropped from 0.69 to 0.086, val loss from 0.69 to 0.24.
 Val loss started a shallow uptick after epoch 47 (0.2405 → 0.2434 by 50)
-while ranking metrics kept climbing — classic mild over-fit on loss with
+while ranking metrics kept climbing - classic mild over-fit on loss with
 the ranking objective still intact.
 
 Hyperparameters (see `configs/neumf_attn.yaml`):
@@ -112,8 +112,8 @@ Total parameters: **9.5 M** (GMF + MLP embeddings + MLP stack + attention + fusi
 
 ## What the attention learned
 
-Because the aspect vectors are already 1–5-scaled averages, the softmax over
-six dimensions mostly smooths across aspects rather than picking a winner —
+Because the aspect vectors are already 1-5-scaled averages, the softmax over
+six dimensions mostly smooths across aspects rather than picking a winner -
 similar magnitude as a uniform 1/6 prior, with small per-user deviations.
 The attention is a contributing signal but not the load-bearing piece of
 the model; most of the lift above plain GMF comes from the MLP branch on
@@ -123,7 +123,7 @@ scalar nudge.
 A follow-up experiment worth running (not done here): swap the softmax for
 a sparsemax, or add an entropy penalty, to force the attention to
 differentiate. That's the same pattern Pramod's TextNCF sub-rating variant
-hit — softmax-over-aspects is a weak prior on this data.
+hit - softmax-over-aspects is a weak prior on this data.
 
 ## Reproducibility
 
@@ -139,4 +139,4 @@ Outputs land in `results/neumf_attn/`:
 
 Per-epoch metrics: `logs/neumf_attn/metrics_gmf64_mlp64.csv` (gitignored).
 
-Notebook walkthrough: [`variants/aditya/notebooks/08_neumf_attn.ipynb`](../../variants/aditya/notebooks/08_neumf_attn.ipynb).
+Notebook walkthrough: [`variants/aditya/notebooks/neumf_attn.ipynb`](../../variants/aditya/notebooks/neumf_attn.ipynb).

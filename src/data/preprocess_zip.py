@@ -3,11 +3,9 @@ Preprocess HotelRec data directly from the zip archive.
 
 Streams reviews from the ~50GB zip without extracting to disk.
 The zip contains ~365K per-hotel JSON files, each with an array of reviews.
-We flatten them into a single stream, apply k-core filtering, and save
-the same parquet files that the rest of the pipeline expects.
+We flatten them into a single stream, apply k-core filtering, and save the same parquet files that the rest of the pipeline expects.
 
-This replaces the two-step preprocess.py + split.py workflow when you
-want to avoid creating a 50GB intermediate HotelRec.txt file.
+This replaces the two-step preprocess.py + split.py workflow when you want to avoid creating a 50GB intermediate HotelRec.txt file.
 
 Usage:
     python -m src.data.preprocess_zip --kcore 20
@@ -34,9 +32,7 @@ def load_config(path: str) -> dict:
 def _iter_reviews_from_zip(zip_path: str, max_reviews: int = 0):
     """Yield one review dict at a time from the HotelRec zip.
 
-    Each entry in the zip is a per-hotel JSON file containing an array
-    of review objects. We open each file inside the zip, parse the JSON
-    array, and yield individual reviews.
+    Each entry in the zip is a per-hotel JSON file containing an array of review objects. We open each file inside the zip, parse the JSON array, and yield individual reviews.
 
     Args:
         zip_path: path to HotelRec.zip

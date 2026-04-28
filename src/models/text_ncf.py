@@ -1,10 +1,8 @@
 """
 Review-text-enhanced Neural Collaborative Filtering (TextNCF).
 
-Two-branch hybrid: GMF (collaborative) + text (sentence embeddings)
-fused through a small MLP. Text embeddings are pre-computed offline
-with all-MiniLM-L6-v2 and loaded as registered buffers so the model
-is compatible with the shared evaluate_ranking(model, loader) interface.
+Two-branch hybrid: GMF (collaborative) + text (sentence embeddings) fused through a small MLP. Text embeddings are pre-computed offline
+with all-MiniLM-L6-v2 and loaded as registered buffers so the model is compatible with the shared evaluate_ranking(model, loader) interface.
 
 Architecture:
     GMF branch:  user_emb ⊙ item_emb  →  (embed_dim,)
@@ -69,7 +67,7 @@ class TextNCF(nn.Module):
         layers.append(nn.Linear(prev, 1))
         self.mlp = nn.Sequential(*layers)
 
-        # text embedding buffers — set via load_text_embeddings()
+        # text embedding buffers - set via load_text_embeddings()
         # registered as buffers so they move to GPU with .to(device)
         self.register_buffer("_user_text_emb", torch.zeros(1, text_dim))
         self.register_buffer("_item_text_emb", torch.zeros(1, text_dim))

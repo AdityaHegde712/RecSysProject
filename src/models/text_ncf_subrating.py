@@ -4,10 +4,8 @@ Sub-Rating Decomposition TextNCF.
 HotelRec has 6 aspect-level sub-ratings:
   Service, Cleanliness, Location, Value, Rooms, Sleep Quality
 
-Instead of predicting a single score, this model predicts each sub-rating
-separately and combines them with learned per-user attention weights.
-The intuition: different travelers care about different aspects (business
-travelers care about WiFi/location, families care about rooms/cleanliness).
+Instead of predicting a single score, this model predicts each sub-rating separately and combines them with learned per-user attention weights.
+The intuition: different travelers care about different aspects (business travelers care about WiFi/location, families care about rooms/cleanliness).
 
 Architecture:
     Same two-branch fusion as TextNCF for the shared representation.

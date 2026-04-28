@@ -1,10 +1,8 @@
 """
 Multi-Task TextNCF: joint ranking + rating prediction.
 
-Extends TextNCF with a rating prediction head so the model learns from
-both implicit (BPR) and explicit (MSE on ratings) signals simultaneously.
-The idea is that predicting ratings forces the model to learn finer-grained
-preferences, which should help ranking too.
+Extends TextNCF with a rating prediction head so the model learns from both implicit (BPR) and explicit (MSE on ratings) signals simultaneously.
+The idea is that predicting ratings forces the model to learn finer-grained preferences, which should help ranking too.
 
 Architecture:
     Same two-branch fusion as TextNCF, but with two output heads:
@@ -124,7 +122,7 @@ class TextNCFMultiTask(nn.Module):
     def predict_rating(self, user_ids, item_ids):
         """Predict ratings for (user, item) pairs.
 
-        Returns predicted ratings (not clamped — clamping done in loss).
+        Returns predicted ratings (not clamped - clamping done in loss).
         """
         h = self._encode(user_ids, item_ids)
         return self.rating_head(h).squeeze(-1)

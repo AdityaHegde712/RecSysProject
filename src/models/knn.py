@@ -2,11 +2,9 @@
 ItemKNN baseline using scipy sparse cosine similarity.
 
 Standard item-based k-nearest-neighbor collaborative filtering.
-Computes item-item cosine similarity from the sparse user-item matrix,
-then predicts scores via weighted similarity to a user's past items.
+Computes item-item cosine similarity from the sparse user-item matrix, then predicts scores via weighted similarity to a user's past items.
 
-Reference: Sarwar et al. (2001), "Item-Based Collaborative Filtering
-Recommendation Algorithms", WWW 2001.
+Reference: Sarwar et al. (2001), "Item-Based Collaborative Filtering Recommendation Algorithms", WWW 2001.
 """
 
 import numpy as np

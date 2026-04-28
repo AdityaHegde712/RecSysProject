@@ -1,11 +1,9 @@
 #!/bin/bash
 # Download HotelRec dataset
 #
-# The dataset is hosted on SWITCHdrive (Swiss academic cloud):
-#   https://drive.switch.ch/index.php/s/n48smsdufhRA7fR
+# The dataset is hosted on SWITCHdrive (Swiss academic cloud): https://drive.switch.ch/index.php/s/n48smsdufhRA7fR
 #
-# It's a single large JSON file (~10GB) containing all 50M reviews.
-# For academic research use only.
+# It's a single large JSON file (~10GB) containing all 50M reviews. 
 #
 # Usage:
 #   bash scripts/download_data.sh full     # download from SWITCHdrive
@@ -28,12 +26,12 @@ echo "Date: $(date)"
 echo "============================================"
 echo ""
 
-# ─── Full download from SWITCHdrive ──────────────────────────────────
+# Full download from SWITCHdrive
 download_full() {
     echo ">>> Downloading HotelRec dataset from SWITCHdrive..."
     echo "    Source: https://drive.switch.ch/index.php/s/n48smsdufhRA7fR"
     echo "    The archive is ~10GB (zip containing ~365K hotel JSON files)."
-    echo "    No extraction needed — our pipeline streams directly from the zip."
+    echo "    No extraction needed - our pipeline streams directly from the zip."
     echo ""
 
     DOWNLOAD_URL="https://drive.switch.ch/index.php/s/n48smsdufhRA7fR/download"
@@ -58,7 +56,7 @@ download_full() {
 
     DEST="${RAW_DIR}/HotelRec.zip"
     echo "  Downloading to $DEST ..."
-    echo "  (This will take a while — ~10GB file)"
+    echo "  (This will take a while - ~10GB file)"
     echo ""
 
     # Try wget first (supports resume with -c)
@@ -83,16 +81,18 @@ download_full() {
         exit 1
     fi
 
-    # No extraction needed — preprocess_zip.py streams directly from the zip.
+    # No extraction needed - preprocess_zip.py streams directly from the zip.
     echo ""
     echo "  Download complete. No extraction needed."
     echo "  The preprocessing step reads directly from the zip file."
     echo ""
-    echo "  Next: sbatch scripts/run_hpc.sh run-sample  # smoke test"
-    echo "    or: sbatch scripts/run_hpc.sh run-all      # full run"
+    echo "  Next:"
+    echo "    python -m src.data.preprocess --kcore 20    # 20-core filter + parquet"
+    echo "    python -m src.data.split --kcore 20         # train/val/test split"
+    echo "  (HPC layer at extras/hpc/run_hpc.sh available as an alternative.)"
 }
 
-# ─── Dispatch ─────────────────────────────────────────────────────────
+# Dispatch 
 case "$MODE" in
     full)
         download_full
@@ -100,16 +100,14 @@ case "$MODE" in
     *)
         echo "Usage: bash scripts/download_data.sh full"
         echo "  Downloads HotelRec zip from SWITCHdrive (~50GB)."
-        echo "  No extraction needed — preprocess_zip.py streams from the zip."
+        echo "  No extraction needed - preprocess_zip.py streams from the zip."
         echo ""
-        echo "  For a quick smoke test with a subset:"
-        echo "    sbatch scripts/run_hpc.sh run-sample"
-        echo "  (uses --max-reviews 500000 internally)"
+        echo "  For a quick smoke test with a subset, run preprocess.py with --max-reviews 500000."
         exit 1
         ;;
 esac
 
-# ─── Stats ────────────────────────────────────────────────────────────
+# Stats
 echo ""
 echo "--- Dataset stats ---"
 ZIP_FILE=$(ls "${RAW_DIR}"/*.zip 2>/dev/null | head -1)

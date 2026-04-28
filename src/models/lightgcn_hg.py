@@ -1,25 +1,18 @@
 """
 LightGCN-HG: LightGCN on a hotel-metadata heterogeneous graph.
 
-Extends vanilla LightGCN's (user, item) bipartite graph with up to three
-extra node tiers drawn from hotel_url metadata:
+Extends vanilla LightGCN's (user, item) bipartite graph with up to three extra node tiers drawn from hotel_url metadata:
 
     - g_id     : TripAdvisor leaf-location id (one city / neighbourhood)
     - region   : last two underscore tokens of the location slug
     - country  : last one underscore token of the location slug
 
-Each hotel connects to its tier nodes with an unweighted edge; tier nodes
-connect nowhere else -- they act as pivot hubs that let hotels in the same
-area exchange signal during propagation even when they have no direct
-user overlap. Symmetric normalization handles the resulting degree imbalance.
+Each hotel connects to its tier nodes with an unweighted edge. Tier nodes connect nowhere else, they act as pivot hubs that let hotels in the same
+area exchange signal during propagation even when they have no direct user overlap. Symmetric normalization handles the resulting degree imbalance.
 
-The scoring API is identical to vanilla LightGCN (user-item dot product);
-tier embeddings exist only to influence user/item embeddings through
-propagation.
-
-Same BPR training loop as LightGCN, same eval protocol (HR@k, NDCG@k
-under 1-vs-99). The only model-level change is the bigger adjacency and
-embedding table.
+The scoring API is identical to vanilla LightGCN (user-item dot product). Tier embeddings exist only to influence user/item embeddings through
+propagation. Same BPR training loop as LightGCN, same eval protocol (HR@k, NDCG@k under 1-vs-99). 
+The only model-level change is the bigger adjacency and embedding table.
 """
 
 from __future__ import annotations

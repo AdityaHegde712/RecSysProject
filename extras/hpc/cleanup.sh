@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 echo "============================================"
-echo "HotelRec — Cleanup"
+echo "HotelRec - Cleanup"
 echo "============================================"
 echo ""
 

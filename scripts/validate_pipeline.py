@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """Validate the HotelRec pipeline before submitting HPC jobs.
 
-Tests the ItemKNN model: creation, fit on synthetic data, recommend,
-predict, ranking metrics, and metrics logging.
+Tests the ItemKNN model: creation, fit on synthetic data, recommend, predict, ranking metrics, and metrics logging.
 
 Usage:
     python scripts/validate_pipeline.py
@@ -34,7 +33,7 @@ def step(name, fn):
         FAIL += 1
 
 
-# ─── Tests ────────────────────────────────────────────────────────────
+# Tests
 
 def test_core_imports():
     import numpy
@@ -182,11 +181,11 @@ def test_config_loading():
         print(f'         {cfg_path}: model={cfg["model"]["name"]}')
 
 
-# ─── Main ─────────────────────────────────────────────────────────────
+# Main
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("HotelRec — Pipeline Validation (ItemKNN)")
+    print("HotelRec - Pipeline Validation (ItemKNN)")
     print("=" * 60)
     print()
 

@@ -10,7 +10,7 @@
 # Usage:
 #   bash scripts/run_text_ncf_all.sh
 #
-# Runs locally; outputs are idempotent (train scripts back up old metrics).
+# Runs locally
 
 set -e
 cd "$(dirname "$0")/.."

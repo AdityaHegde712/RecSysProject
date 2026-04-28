@@ -1,8 +1,7 @@
 """
 Ensemble scoring: combine TextNCF, ItemKNN, and GMF predictions.
 
-Min-max normalizes each model's scores per user, then does a grid search
-over weight combinations (w1+w2+w3=1) on the validation set. Reports
+Min-max normalizes each model's scores per user, then does a grid search over weight combinations (w1+w2+w3=1) on the validation set. Reports
 the best ensemble on the test set.
 
 Usage:
