@@ -268,13 +268,13 @@ Every reported number traces back to an executed notebook cell:
 |---|---|---|
 | Data download | network-bound | around 50 GB zip, single fetch |
 | Preprocessing (k-core + split) | 25 min | streaming JSONL, two-pass |
-| Baselines (Popularity + ItemKNN + GMF) | 30 min | step 4-5 |
-| LightGCN vanilla + HG | 100 min | step 7 |
-| SASRec | 15 min | step 8 |
-| NeuMF vanilla + enhanced | 200 min | step 9 |
-| TextNCF family (5 trainings + ensemble + two-stage + RMSE) | 80 min | step 10 |
-| Phase 3 meta-ensemble | 2 min | step 11 |
-| RMSE pass for all | 5 min | step 12 |
+| Baselines (Popularity + ItemKNN + GMF) | 30 min |  |
+| LightGCN vanilla + HG | 100 min | |
+| SASRec | 15 min | |
+| NeuMF vanilla + enhanced | 200 min | |
+| TextNCF family (5 trainings + ensemble + two-stage + RMSE) | 80 min | |
+| Phase 3 meta-ensemble | 2 min | |
+| RMSE pass for all | 5 min |  |
 | **Total** | **≈ 7.5 hours** | probably overnight on a single GPU |
 
 **HPC alternative (Optional - not tested for all variants):** Pramod's SLURM layer lives in extras/hpc/ (run_hpc.sh, aliases, requirements-hpc.txt). The canonical local path above is what was used for every shipped result.

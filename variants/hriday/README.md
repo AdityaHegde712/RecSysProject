@@ -1,4 +1,6 @@
-# Hriday's Variant - SASRec (primary) + LightGCN-HG (secondary)
+# Variant A - SASRec (primary) + LightGCN-HG (secondary)
+
+**Owner**: Hriday Ampavatina
 
 There are 2 sub-variants under my variant folder:
 
