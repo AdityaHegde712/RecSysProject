@@ -1,4 +1,4 @@
-# Team 3 - Recommender Systems on the HotelRec Dataset
+# Hotel Recommendation Engine: A Comparative Study of Recommender Systems on HotelRec
 
 Team Members: Hriday Ampavatina, Pramod Yadav, Aditya Hegde
 
