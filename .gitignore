@@ -46,3 +46,7 @@ checkpoints/
 
 # Report files and figures
 report/
+
+# Agent tasks and environments
+.agent-tasks/
+.env*
